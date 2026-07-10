@@ -9,6 +9,7 @@
     { "include": "#characters" },
     { "include": "#numbers" },
     { "include": "#literals" },
+    { "include": "#self-keyword" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#builtins" },
@@ -65,11 +66,16 @@
       ]
     },
 
+    "self-keyword": {
+      "name": "keyword.control.self.forja",
+      "match": "\\beste\\b"
+    },
+
     "keywords": {
       "patterns": [
         {
           "name": "keyword.control.forja",
-          "match": "\\b(importar|variable|var|constante|const|mut|si|sino|mientras|para|repetir|funcion|fun|retornar|clase|constructor|nuevo|este|prestado|tipo|coincidir|caso|BD|externo|externa|hilo|canal|enviar|recibir|unir|rasgo|implementa|donde|seleccionar|tiempo|otro|requiere|asegura|siempre|resultado|anterior)\\b"
+          "match": "\\b(importar|variable|var|constante|const|mut|si|sino|mientras|para|repetir|funcion|fun|retornar|clase|constructor|nuevo|prestado|tipo|coincidir|caso|BD|externo|externa|hilo|canal|enviar|recibir|unir|rasgo|implementa|donde|seleccionar|tiempo|otro|requiere|asegura|siempre|resultado|anterior)\\b"
         }
       ]
     },

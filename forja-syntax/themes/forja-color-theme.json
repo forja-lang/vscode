@@ -1,0 +1,82 @@
+{
+  "name": "Forja Dark",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#1e1e2e",
+    "editor.foreground": "#cdd6f4",
+    "editor.lineHighlightBackground": "#2a2a3e",
+    "editor.selectionBackground": "#45475a",
+    "editor.inactiveSelectionBackground": "#313244",
+    "editorCursor.foreground": "#f5e0dc",
+    "editorWhitespace.foreground": "#45475a",
+    "editorIndentGuide.background": "#313244",
+    "editorIndentGuide.activeBackground": "#45475a",
+    "editor.selectionHighlightBackground": "#585b70",
+    "editorBracketMatch.background": "#585b70",
+    "editorBracketMatch.border": "#585b70",
+    "editorLineNumber.foreground": "#585b70",
+    "editorLineNumber.activeForeground": "#cdd6f4"
+  },
+  "tokenColors": [
+    {
+      "scope": "comment",
+      "settings": { "foreground": "#6c7086" }
+    },
+    {
+      "scope": "string.quoted.double.forja",
+      "settings": { "foreground": "#a6e3a1" }
+    },
+    {
+      "scope": "constant.character.forja",
+      "settings": { "foreground": "#a6e3a1" }
+    },
+    {
+      "scope": "constant.character.escape.forja",
+      "settings": { "foreground": "#f38ba8" }
+    },
+    {
+      "scope": "constant.numeric.forja, constant.numeric.decimal.forja, constant.numeric.integer.forja",
+      "settings": { "foreground": "#fab387" }
+    },
+    {
+      "scope": "constant.language.forja",
+      "settings": { "foreground": "#f9e2af" }
+    },
+    {
+      "scope": "keyword.control.forja",
+      "settings": { "foreground": "#cba6f7" }
+    },
+    {
+      "scope": "keyword.control.self.forja",
+      "settings": { "foreground": "#d8b4fe" }
+    },
+    {
+      "scope": "keyword.operator.forja",
+      "settings": { "foreground": "#89dceb" }
+    },
+    {
+      "scope": "storage.type.forja",
+      "settings": { "foreground": "#74c7ec" }
+    },
+    {
+      "scope": "support.function.forja",
+      "settings": { "foreground": "#89b4fa" }
+    },
+    {
+      "scope": "entity.name.function.forja",
+      "settings": { "foreground": "#89b4fa" }
+    },
+    {
+      "scope": "variable.other.readwrite.forja",
+      "settings": { "foreground": "#06b6d4" }
+    },
+    {
+      "scope": "support.class.forja",
+      "settings": { "foreground": "#74c7ec" }
+    },
+    {
+      "scope": "punctuation",
+      "settings": { "foreground": "#bac2de" }
+    }
+  ]
+}

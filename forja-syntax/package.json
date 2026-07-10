@@ -94,6 +94,13 @@
         "path": "./syntaxes/forja.tmLanguage.json"
       }
     ],
+    "themes": [
+      {
+        "label": "Forja Dark",
+        "uiTheme": "vs-dark",
+        "path": "./themes/forja-color-theme.json"
+      }
+    ],
     "viewsContainers": {
       "activitybar": [
         {
