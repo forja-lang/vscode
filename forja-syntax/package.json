@@ -94,13 +94,66 @@
         "path": "./syntaxes/forja.tmLanguage.json"
       }
     ],
-    "themes": [
-      {
-        "label": "Forja Dark",
-        "uiTheme": "vs-dark",
-        "path": "./themes/forja-color-theme.json"
+    "configurationDefaults": {
+      "[forja]": {
+        "editor.tokenColorCustomizations": {
+          "textMateRules": [
+            {
+              "scope": "variable.other.readwrite.forja",
+              "settings": { "foreground": "#06b6d4" }
+            },
+            {
+              "scope": "string.quoted.double.forja",
+              "settings": { "foreground": "#a6e3a1" }
+            },
+            {
+              "scope": "constant.character.forja",
+              "settings": { "foreground": "#a6e3a1" }
+            },
+            {
+              "scope": "keyword.control.self.forja",
+              "settings": { "foreground": "#d8b4fe" }
+            },
+            {
+              "scope": "keyword.control.forja",
+              "settings": { "foreground": "#cba6f7" }
+            },
+            {
+              "scope": "keyword.operator.forja",
+              "settings": { "foreground": "#89dceb" }
+            },
+            {
+              "scope": "storage.type.forja",
+              "settings": { "foreground": "#74c7ec" }
+            },
+            {
+              "scope": "support.function.forja, entity.name.function.forja",
+              "settings": { "foreground": "#89b4fa" }
+            },
+            {
+              "scope": "constant.numeric.decimal.forja, constant.numeric.integer.forja",
+              "settings": { "foreground": "#fab387" }
+            },
+            {
+              "scope": "constant.language.forja",
+              "settings": { "foreground": "#f9e2af" }
+            },
+            {
+              "scope": "support.class.forja",
+              "settings": { "foreground": "#74c7ec" }
+            },
+            {
+              "scope": "comment",
+              "settings": { "foreground": "#6c7086" }
+            },
+            {
+              "scope": "punctuation",
+              "settings": { "foreground": "#bac2de" }
+            }
+          ]
+        }
       }
-    ],
+    },
     "viewsContainers": {
       "activitybar": [
         {
