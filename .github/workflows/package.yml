@@ -18,6 +18,7 @@ jobs:
           cache: npm
           cache-dependency-path: forja-syntax/package-lock.json
       - run: npm ci
+      - run: npm run compile
       - run: npx vsce package
       - uses: actions/upload-artifact@v4
         with:
