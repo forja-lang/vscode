@@ -5,24 +5,14 @@
   "fileTypes": [".fa"],
   "patterns": [
     { "include": "#comments" },
-    { "include": "#doc-comments" },
     { "include": "#strings" },
     { "include": "#characters" },
     { "include": "#numbers" },
     { "include": "#literals" },
-    { "include": "#function-definition" },
-    { "include": "#class-definition" },
-    { "include": "#rasgo-definition" },
-    { "include": "#implementa-definition" },
-    { "include": "#type-definition" },
-    { "include": "#new-instance" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#builtins" },
-    { "include": "#attributes" },
     { "include": "#function-call" },
-    { "include": "#member-access" },
-    { "include": "#type-annotation" },
     { "include": "#uppercase-identifier" },
     { "include": "#operators" },
     { "include": "#punctuation" },
@@ -32,6 +22,14 @@
     "comments": {
       "patterns": [
         {
+          "name": "comment.line.documentation.forja",
+          "match": "///.*$"
+        },
+        {
+          "name": "comment.line.number-sign.forja",
+          "match": "#.*$"
+        },
+        {
           "name": "comment.line.double-slash.forja",
           "match": "//.*$"
         },
@@ -39,15 +37,6 @@
           "name": "comment.block.forja",
           "begin": "/\\*",
           "end": "\\*/"
-        }
-      ]
-    },
-
-    "doc-comments": {
-      "patterns": [
-        {
-          "name": "comment.line.documentation.forja",
-          "match": "///.*$"
         }
       ]
     },
@@ -107,87 +96,10 @@
       "match": "\\b(escribir|leer|asegurar|longitud|aleatorio|redondear|potencia|raiz|maximo|minimo|concatenar|insertar|eliminar|contiene|claves|valores|a_caracter|a_texto|a_entero|a_decimal|es_entero|es_texto|es_decimal|es_booleano|es_lista|es_mapa|es_nulo|es_arreglo|tiempo_actual|esperar|abrir_archivo|leer_archivo|escribir_archivo|crear_directorio|existe_archivo|conectar|consultar|ejecutar|cerrar|transaccion|guardar)\\b"
     },
 
-    "attributes": {
-      "patterns": [
-        {
-          "name": "keyword.operator.attribute.forja",
-          "match": "@"
-        },
-        {
-          "name": "entity.name.tag.forja",
-          "match": "\\b(test|derive)\\b"
-        }
-      ]
-    },
-
-    "function-definition": {
-      "match": "\\b(funcion|fun)\\s+([a-zA-Z_][a-zA-Z0-9_]*)\\b",
-      "captures": {
-        "1": { "name": "keyword.control.forja" },
-        "2": { "name": "entity.name.function.forja" }
-      }
-    },
-
-    "class-definition": {
-      "match": "\\b(clase)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-      "captures": {
-        "1": { "name": "keyword.control.forja" },
-        "2": { "name": "entity.name.class.forja" }
-      }
-    },
-
-    "rasgo-definition": {
-      "match": "\\b(rasgo)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-      "captures": {
-        "1": { "name": "keyword.control.forja" },
-        "2": { "name": "entity.name.class.forja" }
-      }
-    },
-
-    "implementa-definition": {
-      "match": "\\b(implementa)\\s+([A-Z][a-zA-Z0-9_]*)",
-      "captures": {
-        "1": { "name": "keyword.control.forja" },
-        "2": { "name": "entity.name.class.forja" }
-      }
-    },
-
-    "new-instance": {
-      "match": "\\b(nuevo)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-      "captures": {
-        "1": { "name": "keyword.control.forja" },
-        "2": { "name": "entity.name.class.forja" }
-      }
-    },
-
-    "type-definition": {
-      "match": "\\b(tipo)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
-      "captures": {
-        "1": { "name": "keyword.control.forja" },
-        "2": { "name": "entity.name.class.forja" }
-      }
-    },
-
     "function-call": {
       "match": "\\b([a-z_][a-zA-Z0-9_]*)(?=\\s*\\()",
       "captures": {
         "1": { "name": "entity.name.function.forja" }
-      }
-    },
-
-    "member-access": {
-      "match": "(\\.)\\s*([a-zA-Z_][a-zA-Z0-9_]*)",
-      "captures": {
-        "1": { "name": "punctuation.dot.forja" },
-        "2": { "name": "variable.other.property.forja" }
-      }
-    },
-
-    "type-annotation": {
-      "match": "(:)\\s*([A-Z][a-zA-Z0-9_]*)",
-      "captures": {
-        "1": { "name": "punctuation.colon.forja" },
-        "2": { "name": "storage.type.forja" }
       }
     },
 
