@@ -46,7 +46,9 @@ import {
     Selection,
     Range,
     TextEditorRevealType,
-    ConfigurationTarget,
+    TextEditor,
+    TextEditorDecorationType,
+    TextDocument,
 } from 'vscode';
 import {
     LanguageClient,
@@ -141,7 +143,7 @@ export function activate(context: ExtensionContext) {
     hotReloadEnabled = workspace.getConfiguration('forja').get<boolean>('hotReload.enabled', true);
 
     // ── Apply Forja syntax colors ──
-    applyForjaTokenColors();
+    setupForjaHighlighter(context);
 
     // ── LSP Client ──
     startLSPClient(context);
@@ -244,35 +246,253 @@ export function activate(context: ExtensionContext) {
     outputChannel.appendLine('Forja Extension lista - todos los comandos registrados');
 }
 
-function applyForjaTokenColors() {
-    const config = workspace.getConfiguration();
-    const current = config.inspect<Record<string, any>>('editor.tokenColorCustomizations');
-    const globalValue: Record<string, any> = current?.globalValue || {};
+// ======================================================================
+// Manual Syntax Highlighter via TextEditorDecorationType
+// ======================================================================
 
-    const forjaRules = {
-        textMateRules: [
-            { scope: 'variable.other.readwrite.forja', settings: { foreground: '#06b6d4' } },
-            { scope: 'string.quoted.double.forja', settings: { foreground: '#a6e3a1' } },
-            { scope: 'constant.character.forja', settings: { foreground: '#a6e3a1' } },
-            { scope: 'keyword.control.self.forja', settings: { foreground: '#d8b4fe' } },
-            { scope: 'keyword.control.forja', settings: { foreground: '#cba6f7' } },
-            { scope: 'keyword.operator.forja', settings: { foreground: '#89dceb' } },
-            { scope: 'storage.type.forja', settings: { foreground: '#74c7ec' } },
-            { scope: 'support.function.forja, entity.name.function.forja', settings: { foreground: '#89b4fa' } },
-            { scope: 'constant.numeric.decimal.forja, constant.numeric.integer.forja', settings: { foreground: '#fab387' } },
-            { scope: 'constant.language.forja', settings: { foreground: '#f9e2af' } },
-            { scope: 'support.class.forja', settings: { foreground: '#74c7ec' } },
-            { scope: 'comment', settings: { foreground: '#6c7086' } },
-            { scope: 'punctuation', settings: { foreground: '#bac2de' } },
-        ],
+const FORJA_KEYWORDS = [
+    'importar', 'variable', 'var', 'constante', 'const', 'mut', 'si', 'sino',
+    'mientras', 'para', 'repetir', 'funcion', 'fun', 'retornar', 'clase',
+    'constructor', 'nuevo', 'prestado', 'tipo', 'coincidir', 'caso', 'BD',
+    'externo', 'externa', 'hilo', 'canal', 'enviar', 'recibir', 'unir',
+    'rasgo', 'implementa', 'donde', 'seleccionar', 'tiempo', 'otro',
+    'requiere', 'asegura', 'siempre', 'resultado', 'anterior', 'continuar',
+];
+
+const FORJA_TYPES = ['Entero', 'Decimal', 'Texto', 'Booleano', 'Nulo', 'Exacto'];
+const FORJA_LITERALS = ['verdadero', 'falso', 'nulo'];
+const FORJA_BUILTINS = [
+    'escribir', 'leer', 'asegurar', 'longitud', 'aleatorio', 'redondear',
+    'potencia', 'raiz', 'maximo', 'minimo', 'concatenar', 'insertar',
+    'eliminar', 'contiene', 'claves', 'valores', 'a_caracter', 'a_texto',
+    'a_entero', 'a_decimal', 'es_entero', 'es_texto', 'es_decimal',
+    'es_booleano', 'es_lista', 'es_mapa', 'es_nulo', 'es_arreglo',
+    'tiempo_actual', 'esperar', 'abrir_archivo', 'leer_archivo',
+    'escribir_archivo', 'crear_directorio', 'existe_archivo', 'conectar',
+    'consultar', 'ejecutar', 'cerrar', 'transaccion', 'guardar',
+    'pedir_texto', 'imprimir', 'mayuscula',
+];
+
+interface DecoType { type: TextEditorDecorationType; ranges: Range[]; }
+let decoTypes: Record<string, DecoType> = {};
+
+function getDecoTypes(context: ExtensionContext): Record<string, DecoType> {
+    if (Object.keys(decoTypes).length > 0) return decoTypes;
+
+    const defs: Record<string, string> = {
+        comment:    '#6c7086',
+        string:     '#a6e3a1',
+        char:        '#a6e3a1',
+        number:     '#fab387',
+        boolean:    '#f9e2af',
+        keyword:    '#cba6f7',
+        self:       '#d8b4fe',
+        type:       '#74c7ec',
+        cls:        '#74c7ec',
+        fn:         '#89b4fa',
+        builtin:    '#89b4fa',
+        operator:   '#89dceb',
+        variable:   '#06b6d4',
+        punctuation:'#9399b2',
     };
 
-    const existing = globalValue['[forja]'];
-    if (!existing || JSON.stringify(existing) !== JSON.stringify(forjaRules)) {
-        globalValue['[forja]'] = forjaRules;
-        config.update('editor.tokenColorCustomizations', globalValue, ConfigurationTarget.Global)
-            .then(() => outputChannel.appendLine('Forja token colors applied'), () => {});
+    for (const [name, color] of Object.entries(defs)) {
+        const t = window.createTextEditorDecorationType({ color });
+        decoTypes[name] = { type: t, ranges: [] };
+        context.subscriptions.push(t);
     }
+    return decoTypes;
+}
+
+function tokenizeForja(text: string): { name: string; start: number; end: number }[] {
+    const tokens: { name: string; start: number; end: number }[] = [];
+    const len = text.length;
+    let i = 0;
+
+    const isWordChar = (c: string) => /[a-zA-Z0-9_ñ]/.test(c);
+    const kwSet = new Set(FORJA_KEYWORDS);
+    const tySet = new Set(FORJA_TYPES);
+    const litSet = new Set(FORJA_LITERALS);
+    const biSet = new Set(FORJA_BUILTINS);
+
+    while (i < len) {
+        const c = text[i];
+
+        // Comments: #, //, ///, /* */
+        if (c === '#') {
+            let end = text.indexOf('\n', i);
+            if (end === -1) end = len;
+            tokens.push({ name: 'comment', start: i, end });
+            i = end;
+            continue;
+        }
+        if (c === '/' && text[i + 1] === '/') {
+            let end = text.indexOf('\n', i);
+            if (end === -1) end = len;
+            tokens.push({ name: 'comment', start: i, end });
+            i = end;
+            continue;
+        }
+        if (c === '/' && text[i + 1] === '*') {
+            let end = text.indexOf('*/', i + 2);
+            if (end === -1) end = len; else end += 2;
+            tokens.push({ name: 'comment', start: i, end });
+            i = end;
+            continue;
+        }
+
+        // Strings: "..."
+        if (c === '"') {
+            let j = i + 1;
+            while (j < len) {
+                if (text[j] === '\\' && j + 1 < len) { j += 2; continue; }
+                if (text[j] === '"') { j++; break; }
+                j++;
+            }
+            tokens.push({ name: 'string', start: i, end: j });
+            i = j;
+            continue;
+        }
+
+        // Characters: '...'
+        if (c === "'") {
+            let j = i + 1;
+            while (j < len) {
+                if (text[j] === '\\' && j + 1 < len) { j += 2; continue; }
+                if (text[j] === "'") { j++; break; }
+                j++;
+            }
+            tokens.push({ name: 'char', start: i, end: j });
+            i = j;
+            continue;
+        }
+
+        // Numbers
+        if (/\d/.test(c)) {
+            let j = i + 1;
+            while (j < len && /[\d.]/.test(text[j])) j++;
+            tokens.push({ name: 'number', start: i, end: j });
+            i = j;
+            continue;
+        }
+
+        // Identifiers / keywords
+        if (isWordChar(c) && /[a-zA-Z_ñ]/.test(c)) {
+            let j = i + 1;
+            while (j < len && isWordChar(text[j])) j++;
+            const word = text.substring(i, j);
+
+            if (word === 'este') {
+                tokens.push({ name: 'self', start: i, end: j });
+            } else if (kwSet.has(word)) {
+                tokens.push({ name: 'keyword', start: i, end: j });
+            } else if (litSet.has(word)) {
+                tokens.push({ name: 'boolean', start: i, end: j });
+            } else if (tySet.has(word)) {
+                tokens.push({ name: 'type', start: i, end: j });
+            } else if (biSet.has(word)) {
+                tokens.push({ name: 'builtin', start: i, end: j });
+            } else if (/^[A-Z]/.test(word)) {
+                tokens.push({ name: 'cls', start: i, end: j });
+            } else if (text[j] === '(' || (text[j] === ' ' && text[j + 1] === '(')) {
+                tokens.push({ name: 'fn', start: i, end: j });
+            } else {
+                tokens.push({ name: 'variable', start: i, end: j });
+            }
+            i = j;
+            continue;
+        }
+
+        // Operators
+        if (/[+\-*/%=<>!&|]/.test(c)) {
+            let j = i;
+            if (text[j] === '-' && text[j + 1] === '>') j += 2;
+            else if (text[j] === ':' && text[j + 1] === ':') j += 2;
+            else if (text[j] === '.' && text[j + 1] === '.' && text[j + 2] === '.') j += 3;
+            else if ((c === '=' || c === '!' || c === '>' || c === '<' || c === '+' || c === '-' || c === '*' || c === '/' || c === '%' || c === '&' || c === '|') && text[j + 1] === '=') j += 2;
+            else if (c === '|' && text[j + 1] === '|') j += 2;
+            else if (c === '&' && text[j + 1] === '&') j += 2;
+            else if (c === '+' && text[j + 1] === '+') j += 2;
+            else if (c === '-' && text[j + 1] === '-') j += 2;
+            else j += 1;
+            tokens.push({ name: 'operator', start: i, end: j });
+            i = j;
+            continue;
+        }
+
+        // Punctuation
+        if (/[{}()\[\];:,.@?]/.test(c)) {
+            tokens.push({ name: 'punctuation', start: i, end: i + 1 });
+            i++;
+            continue;
+        }
+
+        i++;
+    }
+
+    return tokens;
+}
+
+function applyForjaDecorations(editor: TextEditor) {
+    if (editor.document.languageId !== 'forja') return;
+    const dt = getDecorations();
+
+    for (const key of Object.keys(dt)) dt[key].ranges = [];
+
+    const text = editor.document.getText();
+    const tokens = tokenizeForja(text);
+
+    for (const tok of tokens) {
+        const d = dt[tok.name];
+        if (!d) continue;
+        const startPos = editor.document.positionAt(tok.start);
+        const endPos = editor.document.positionAt(tok.end);
+        d.ranges.push(new Range(startPos, endPos));
+    }
+
+    for (const key of Object.keys(dt)) {
+        editor.setDecorations(dt[key].type, dt[key].ranges);
+    }
+}
+
+function clearForjaDecorations(editor: TextEditor) {
+    const dt = decoTypes;
+    for (const key of Object.keys(dt)) {
+        editor.setDecorations(dt[key].type, []);
+    }
+}
+
+function getDecorations(): Record<string, DecoType> {
+    return decoTypes;
+}
+
+function setupForjaHighlighter(context: ExtensionContext) {
+    getDecoTypes(context);
+
+    // Apply on editor switch
+    context.subscriptions.push(
+        window.onDidChangeActiveTextEditor((editor) => {
+            if (editor) {
+                if (editor.document.languageId === 'forja') {
+                    applyForjaDecorations(editor);
+                } else {
+                    clearForjaDecorations(editor);
+                }
+            }
+        })
+    );
+
+    // Apply on text change (debounced)
+    let debounceTimer: NodeJS.Timeout | undefined;
+    context.subscriptions.push(
+        workspace.onDidChangeTextDocument((event) => {
+            const editor = window.activeTextEditor;
+            if (!editor || editor.document !== event.document) return;
+            if (editor.document.languageId !== 'forja') return;
+            if (debounceTimer) clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => applyForjaDecorations(editor), 100);
+        })
+    );
 }
 
 export function deactivate(): Thenable<void> | undefined {
