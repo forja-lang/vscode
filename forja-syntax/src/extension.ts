@@ -46,6 +46,7 @@ import {
     Selection,
     Range,
     TextEditorRevealType,
+    ConfigurationTarget,
 } from 'vscode';
 import {
     LanguageClient,
@@ -138,6 +139,9 @@ export function activate(context: ExtensionContext) {
     currentVMMode = workspace.getConfiguration('forja').get<VMMode>('defaultVM', 'fastvm');
     currentTarget = workspace.getConfiguration('forja').get<TargetPlatform>('defaultTarget', 'native');
     hotReloadEnabled = workspace.getConfiguration('forja').get<boolean>('hotReload.enabled', true);
+
+    // ── Apply Forja syntax colors ──
+    applyForjaTokenColors();
 
     // ── LSP Client ──
     startLSPClient(context);
@@ -238,6 +242,37 @@ export function activate(context: ExtensionContext) {
     updateStatusBar();
 
     outputChannel.appendLine('Forja Extension lista - todos los comandos registrados');
+}
+
+function applyForjaTokenColors() {
+    const config = workspace.getConfiguration();
+    const current = config.inspect<Record<string, any>>('editor.tokenColorCustomizations');
+    const globalValue: Record<string, any> = current?.globalValue || {};
+
+    const forjaRules = {
+        textMateRules: [
+            { scope: 'variable.other.readwrite.forja', settings: { foreground: '#06b6d4' } },
+            { scope: 'string.quoted.double.forja', settings: { foreground: '#a6e3a1' } },
+            { scope: 'constant.character.forja', settings: { foreground: '#a6e3a1' } },
+            { scope: 'keyword.control.self.forja', settings: { foreground: '#d8b4fe' } },
+            { scope: 'keyword.control.forja', settings: { foreground: '#cba6f7' } },
+            { scope: 'keyword.operator.forja', settings: { foreground: '#89dceb' } },
+            { scope: 'storage.type.forja', settings: { foreground: '#74c7ec' } },
+            { scope: 'support.function.forja, entity.name.function.forja', settings: { foreground: '#89b4fa' } },
+            { scope: 'constant.numeric.decimal.forja, constant.numeric.integer.forja', settings: { foreground: '#fab387' } },
+            { scope: 'constant.language.forja', settings: { foreground: '#f9e2af' } },
+            { scope: 'support.class.forja', settings: { foreground: '#74c7ec' } },
+            { scope: 'comment', settings: { foreground: '#6c7086' } },
+            { scope: 'punctuation', settings: { foreground: '#bac2de' } },
+        ],
+    };
+
+    const existing = globalValue['[forja]'];
+    if (!existing || JSON.stringify(existing) !== JSON.stringify(forjaRules)) {
+        globalValue['[forja]'] = forjaRules;
+        config.update('editor.tokenColorCustomizations', globalValue, ConfigurationTarget.Global)
+            .then(() => outputChannel.appendLine('Forja token colors applied'), () => {});
+    }
 }
 
 export function deactivate(): Thenable<void> | undefined {

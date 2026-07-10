@@ -95,8 +95,8 @@
       }
     ],
     "configurationDefaults": {
-      "[forja]": {
-        "editor.tokenColorCustomizations": {
+      "editor.tokenColorCustomizations": {
+        "[forja]": {
           "textMateRules": [
             {
               "scope": "variable.other.readwrite.forja",
