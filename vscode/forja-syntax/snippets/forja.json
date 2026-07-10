@@ -1,0 +1,262 @@
+{
+	"Variable declaration": {
+		"scope": "source.forja",
+		"prefix": ["variable", "let", "var"],
+		"body": "variable ${1:nombre} = ${2:valor}",
+		"description": "Declarar una variable mutable"
+	},
+	"Constant declaration": {
+		"scope": "source.forja",
+		"prefix": ["constante", "const"],
+		"body": "constante ${1:NOMBRE} = ${2:valor}",
+		"description": "Declarar una constante inmutable"
+	},
+	"Function definition": {
+		"scope": "source.forja",
+		"prefix": ["funcion", "fn", "function"],
+		"body": [
+			"funcion ${1:nombre}(${2:parametros})${3: -> ${4:Tipo}} {",
+			"\t${5:// cuerpo}",
+			"}"
+		],
+		"description": "Definir una función"
+	},
+	"If statement": {
+		"scope": "source.forja",
+		"prefix": ["si", "if"],
+		"body": [
+			"si ${1:condicion} {",
+			"\t${2:// bloque}",
+			"}${3: sino {",
+			"\t${4:// bloque falso}",
+			"}}"
+		],
+		"description": "Condicional si/sino"
+	},
+	"While loop": {
+		"scope": "source.forja",
+		"prefix": ["mientras", "while"],
+		"body": [
+			"mientras ${1:condicion} {",
+			"\t${2:// bloque}",
+			"}"
+		],
+		"description": "Bucle mientras"
+	},
+	"For loop": {
+		"scope": "source.forja",
+		"prefix": ["para", "for"],
+		"body": [
+			"para ${1:variable i = 0}; ${2:i < 10}; ${3:i = i + 1} {",
+			"\t${4:// bloque}",
+			"}"
+		],
+		"description": "Bucle para (estilo C)"
+	},
+	"Repeat loop": {
+		"scope": "source.forja",
+		"prefix": "repetir",
+		"body": [
+			"repetir ${1:5} {",
+			"\t${2:// bloque}",
+			"}"
+		],
+		"description": "Bucle repetir con conteo fijo"
+	},
+	"Class definition": {
+		"scope": "source.forja",
+		"prefix": ["clase", "class"],
+		"body": [
+			"clase ${1:Nombre} {",
+			"\tvariable ${2:campo}: ${3:Tipo}",
+			"",
+			"\tconstructor(${4:parametros}) {",
+			"\t\t${5:// inicializar}",
+			"\t}",
+			"",
+			"\tfuncion ${6:metodo}()${7: -> ${8:Tipo}} {",
+			"\t\t${9:// cuerpo}",
+			"\t}",
+			"}"
+		],
+		"description": "Definir una clase"
+	},
+	"Constructor": {
+		"scope": "source.forja",
+		"prefix": "constructor",
+		"body": [
+			"constructor(${1:parametros}) {",
+			"\t${2:// inicializar campos}",
+			"}"
+		],
+		"description": "Definir constructor de clase"
+	},
+	"Method": {
+		"scope": "source.forja",
+		"prefix": "metodo",
+		"body": [
+			"funcion ${1:nombre}(${2:parametros})${3: -> ${4:Tipo}} {",
+			"\t${5:// cuerpo}",
+			"}"
+		],
+		"description": "Definir método de clase"
+	},
+	"Enum definition": {
+		"scope": "source.forja",
+		"prefix": "tipo",
+		"body": [
+			"tipo ${1:Nombre} = ${2:Variant1} | ${3:Variant2}${4:(${5:Tipo})}"
+		],
+		"description": "Definir tipo algebraico (enum)"
+	},
+	"Trait definition": {
+		"scope": "source.forja",
+		"prefix": "rasgo",
+		"body": [
+			"rasgo ${1:Nombre} {",
+			"\tfuncion ${2:metodo}(${3:parametros}) -> ${4:Tipo}",
+			"}"
+		],
+		"description": "Definir rasgo (interfaz)"
+	},
+	"Trait implementation": {
+		"scope": "source.forja",
+		"prefix": "implementa",
+		"body": [
+			"implementa ${1:Rasgo} para ${2:Clase} {",
+			"\tfuncion ${3:metodo}(${4:parametros})${5: -> ${6:Tipo}} {",
+			"\t\t${7:// cuerpo}",
+			"\t}",
+			"}"
+		],
+		"description": "Implementar rasgo para una clase"
+	},
+	"Print output": {
+		"scope": "source.forja",
+		"prefix": "escribir",
+		"body": "escribir(${1:mensaje})",
+		"description": "Imprimir en consola"
+	},
+	"Read input": {
+		"scope": "source.forja",
+		"prefix": "leer",
+		"body": "leer()",
+		"description": "Leer entrada del usuario"
+	},
+	"Return value": {
+		"scope": "source.forja",
+		"prefix": "retornar",
+		"body": "retornar ${1:valor}",
+		"description": "Retornar valor"
+	},
+	"Import module": {
+		"scope": "source.forja",
+		"prefix": "importar",
+		"body": "importar \"${1:ruta}\"",
+		"description": "Importar módulo"
+	},
+	"New instance": {
+		"scope": "source.forja",
+		"prefix": "nuevo",
+		"body": "nuevo ${1:Clase}(${2:argumentos})",
+		"description": "Instanciar clase"
+	},
+	"Match expression": {
+		"scope": "source.forja",
+		"prefix": "coincidir",
+		"body": [
+			"coincidir ${1:expresion} {",
+			"\tcaso ${2:patron} => {",
+			"\t\t${3:// cuerpo}",
+			"\t}",
+			"}"
+		],
+		"description": "Pattern matching (coincidir)"
+	},
+	"Match case": {
+		"scope": "source.forja",
+		"prefix": "caso",
+		"body": [
+			"caso ${1:patron} => {",
+			"\t${2:// cuerpo}",
+			"}"
+		],
+		"description": "Brazo de pattern matching"
+	},
+	"Thread (coroutine)": {
+		"scope": "source.forja",
+		"prefix": "hilo",
+		"body": [
+			"hilo {",
+			"\t${1:// código del hilo}",
+			"}"
+		],
+		"description": "Lanzar hilo ligero"
+	},
+	"Channel": {
+		"scope": "source.forja",
+		"prefix": "canal",
+		"body": "variable ${1:tx}, ${2:rx} = canal()",
+		"description": "Crear canal de comunicación"
+	},
+	"Select (channels)": {
+		"scope": "source.forja",
+		"prefix": "seleccionar",
+		"body": [
+			"seleccionar {",
+			"\tcaso ${1:rx}.recibir() => {",
+			"\t\t${2:// procesar}",
+			"\t}",
+			"\ttiempo ${3:1000} => {",
+			"\t\t${4:// timeout}",
+			"\t}",
+			"}"
+		],
+		"description": "Seleccionar entre canales (select)"
+	},
+	"Contract precondition": {
+		"scope": "source.forja",
+		"prefix": "requiere",
+		"body": "requiere ${1:condicion}",
+		"description": "Precondición (Design by Contract)"
+	},
+	"Contract postcondition": {
+		"scope": "source.forja",
+		"prefix": "asegura",
+		"body": "asegura ${1:condicion}",
+		"description": "Postcondición (Design by Contract)"
+	},
+	"Class invariant": {
+		"scope": "source.forja",
+		"prefix": "siempre",
+		"body": "siempre ${1:condicion}",
+		"description": "Invariante de clase (Design by Contract)"
+	},
+	"Test function": {
+		"scope": "source.forja",
+		"prefix": "test",
+		"body": [
+			"@test",
+			"funcion test_${1:nombre}() {",
+			"\t${2:// aserciones}",
+			"}"
+		],
+		"description": "Función de test con @test"
+	},
+	"Main function": {
+		"scope": "source.forja",
+		"prefix": "main",
+		"body": [
+			"funcion main() {",
+			"\t${1:escribir(\"Hola Forja!\")}",
+			"}"
+		],
+		"description": "Función principal main()"
+	},
+	"Doc comment": {
+		"scope": "source.forja",
+		"prefix": "doc",
+		"body": "/// ${1:documentación}",
+		"description": "Comentario de documentación (///)"
+	}
+}

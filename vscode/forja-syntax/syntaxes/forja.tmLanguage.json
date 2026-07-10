@@ -151,8 +151,10 @@
     },
 
     "function-call": {
-      "match": "\\b([a-z_][a-zA-Z0-9_]*)\\s*(?=\\()",
-      "name": "entity.name.function.forja"
+      "match": "\\b([a-z_][a-zA-Z0-9_]*)(?=\\s*\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.forja" }
+      }
     },
 
     "member-access": {
@@ -196,7 +198,7 @@
     },
 
     "identifiers": {
-      "name": "variable.other.forja",
+      "name": "variable.other.readwrite.forja",
       "match": "\\b[a-z_][a-zA-Z0-9_]*\\b"
     }
   }
