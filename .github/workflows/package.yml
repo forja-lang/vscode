@@ -1,0 +1,25 @@
+name: Package VS Code extension
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: forja-syntax
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: forja-syntax/package-lock.json
+      - run: npm ci
+      - run: npx vsce package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: forja-syntax/*.vsix
