@@ -107,6 +107,12 @@
       "forja-sidebar": [
         {
           "type": "tree",
+          "id": "forja.devTools",
+          "name": "Herramientas de Desarrollo",
+          "icon": "$(tools)"
+        },
+        {
+          "type": "tree",
           "id": "forja.projectOutline",
           "name": "Estructura",
           "icon": "$(symbol-misc)"
@@ -406,6 +412,26 @@
           "when": "resourceLangId == forja",
           "command": "forja.runGUI",
           "group": "navigation@4"
+        },
+        {
+          "when": "resourceLangId == forja",
+          "command": "forja.hotReload",
+          "group": "navigation@5"
+        },
+        {
+          "when": "resourceLangId == forja",
+          "command": "forja.hotRestart",
+          "group": "navigation@6"
+        },
+        {
+          "when": "resourceLangId == forja",
+          "command": "forja.runAOT",
+          "group": "navigation@7"
+        },
+        {
+          "when": "resourceLangId == forja",
+          "command": "forja.build",
+          "group": "navigation@8"
         }
       ],
       "editor/context": [

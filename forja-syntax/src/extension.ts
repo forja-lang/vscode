@@ -60,6 +60,7 @@ import {
     ForjaExamplesProvider,
     StdlibBrowserProvider,
     ProjectOutlineProvider,
+    ForjaDevToolsProvider,
 } from './treeviews';
 
 // ======================================================================
@@ -196,9 +197,18 @@ export function activate(context: ExtensionContext) {
     context.subscriptions.push(
         window.registerTreeDataProvider('forja.projectOutline', projectOutlineProvider)
     );
+
+    const devToolsProvider = new ForjaDevToolsProvider();
+    context.subscriptions.push(
+        window.registerTreeDataProvider('forja.devTools', devToolsProvider)
+    );
+
     // Refresh outline on active editor change
     context.subscriptions.push(
-        window.onDidChangeActiveTextEditor(() => projectOutlineProvider.refresh())
+        window.onDidChangeActiveTextEditor(() => {
+            projectOutlineProvider.refresh();
+            updateToolbarVisibility();
+        })
     );
 
     const examplesProvider = new ForjaExamplesProvider(context);
@@ -235,8 +245,19 @@ export function activate(context: ExtensionContext) {
         })
     );
 
+    // ── Create Toolbar Status Bar Items ──
+    for (const item of toolbarItems) {
+        const sbi = window.createStatusBarItem(StatusBarAlignment.Left, item.priority);
+        sbi.text = item.text;
+        sbi.command = item.command;
+        sbi.tooltip = item.tooltip;
+        item.statusBarItem = sbi;
+        context.subscriptions.push(sbi);
+    }
+
     // ── Initial status bar update ──
     updateStatusBar();
+    updateToolbarVisibility();
 
     outputChannel.appendLine('Forja Extension lista - todos los comandos registrados');
 }
@@ -576,6 +597,43 @@ function startLSPClient(context: ExtensionContext) {
 // ======================================================================
 // Status Bar
 // ======================================================================
+
+// ======================================================================
+// Status Bar Toolbar (Android Studio / Flutter style)
+// ======================================================================
+
+interface ToolbarItem {
+    id: string;
+    text: string;
+    command: string;
+    tooltip: string;
+    priority: number;
+    statusBarItem?: StatusBarItem;
+}
+
+let toolbarItems: ToolbarItem[] = [
+    { id: 'runFast', text: '$(zap) Ejecutar', command: 'forja.runFast', tooltip: 'Ejecutar con FastVM', priority: 105 },
+    { id: 'runDebug', text: '$(bug) Debug', command: 'forja.runDebug', tooltip: 'Iniciar depuración (DAP)', priority: 104 },
+    { id: 'hotReload', text: '$(sync) Reload', command: 'forja.hotReload', tooltip: 'Recarga en caliente (Hot Reload)', priority: 103 },
+    { id: 'hotRestart', text: '$(refresh) Restart', command: 'forja.hotRestart', tooltip: 'Reinicio en caliente (Hot Restart)', priority: 102 },
+    { id: 'runAOT', text: '$(tools) AOT', command: 'forja.runAOT', tooltip: 'Compilar AOT y ejecutar', priority: 101 },
+    { id: 'buildAndroid', text: '$(device-mobile) Android', command: 'forja.buildAndroid', tooltip: 'Compilar para Android', priority: 100 },
+];
+
+function updateToolbarVisibility() {
+    const editor = window.activeTextEditor;
+    const isForja = editor && editor.document.languageId === 'forja';
+    
+    for (const item of toolbarItems) {
+        if (item.statusBarItem) {
+            if (isForja) {
+                item.statusBarItem.show();
+            } else {
+                item.statusBarItem.hide();
+            }
+        }
+    }
+}
 
 function updateStatusBar() {
     statusBarVM.text = `${VM_ICONS[currentVMMode]} ${VM_LABELS[currentVMMode]}`;

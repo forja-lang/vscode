@@ -14,6 +14,7 @@ import {
     workspace,
     ExtensionContext,
     Command,
+    ThemeIcon,
 } from 'vscode';
 
 // ======================================================================
@@ -464,5 +465,179 @@ export class ProjectOutlineProvider implements TreeDataProvider<ForjaTreeItem> {
 
     private kindToIcon(_kind: SymbolEntry['kind']): undefined {
         return undefined;
+    }
+}
+
+// ======================================================================
+// Forja Control Panel / DevTools Provider
+// ======================================================================
+
+export class ForjaDevToolsProvider implements TreeDataProvider<ForjaTreeItem> {
+    private _onDidChangeTreeData = new EventEmitter<ForjaTreeItem | undefined>();
+    readonly onDidChangeTreeData: Event<ForjaTreeItem | undefined> = this._onDidChangeTreeData.event;
+
+    refresh(): void {
+        this._onDidChangeTreeData.fire(undefined);
+    }
+
+    getTreeItem(element: ForjaTreeItem): TreeItem {
+        return element;
+    }
+
+    async getChildren(element?: ForjaTreeItem): Promise<ForjaTreeItem[]> {
+        if (!element) {
+            // Root categories
+            return [
+                {
+                    label: 'Ejecución y Depuración',
+                    collapsibleState: TreeItemCollapsibleState.Expanded,
+                    iconPath: new ThemeIcon('run-all'),
+                    children: [
+                        {
+                            label: 'Ejecutar (VM clásica)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('play'),
+                            command: { command: 'forja.run', title: 'Ejecutar VM' }
+                        },
+                        {
+                            label: 'Ejecutar con FastVM (Rápida)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('zap'),
+                            command: { command: 'forja.runFast', title: 'Ejecutar FastVM' }
+                        },
+                        {
+                            label: 'Ejecutar con JIT',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('rocket'),
+                            command: { command: 'forja.runJIT', title: 'Ejecutar JIT' }
+                        },
+                        {
+                            label: 'Compilar AOT y ejecutar',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('tools'),
+                            command: { command: 'forja.runAOT', title: 'Ejecutar AOT' }
+                        },
+                        {
+                            label: 'Iniciar Depuración (DAP)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('bug'),
+                            command: { command: 'forja.runDebug', title: 'Iniciar Debug' }
+                        },
+                        {
+                            label: 'Ejecutar con Interfaz Nativa (GUI)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('window'),
+                            command: { command: 'forja.runGUI', title: 'Ejecutar GUI' }
+                        },
+                        {
+                            label: 'Abrir REPL',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('terminal'),
+                            command: { command: 'forja.runRepl', title: 'Abrir REPL' }
+                        }
+                    ]
+                },
+                {
+                    label: 'Desarrollo en Caliente',
+                    collapsibleState: TreeItemCollapsibleState.Expanded,
+                    iconPath: new ThemeIcon('sync'),
+                    children: [
+                        {
+                            label: 'Hot Reload (Recarga rápida)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('sync'),
+                            command: { command: 'forja.hotReload', title: 'Hot Reload' }
+                        },
+                        {
+                            label: 'Hot Restart (Reinicio rápido)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('refresh'),
+                            command: { command: 'forja.hotRestart', title: 'Hot Restart' }
+                        },
+                        {
+                            label: 'Activar/Desactivar Auto-Reload',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('circle-slash'),
+                            command: { command: 'forja.toggleHotReload', title: 'Toggle Hot Reload' }
+                        }
+                    ]
+                },
+                {
+                    label: 'Compilación y Despliegue',
+                    collapsibleState: TreeItemCollapsibleState.Collapsed,
+                    iconPath: new ThemeIcon('package'),
+                    children: [
+                        {
+                            label: 'Compilar a Bytecode',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('gear'),
+                            command: { command: 'forja.build', title: 'Compilar Bytecode' }
+                        },
+                        {
+                            label: 'Compilar a código ASM (Nativo)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('chip'),
+                            command: { command: 'forja.buildASM', title: 'Compilar ASM' }
+                        },
+                        {
+                            label: 'Compilar a WebAssembly (WASM)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('globe'),
+                            command: { command: 'forja.buildWASM', title: 'Compilar WASM' }
+                        },
+                        {
+                            label: 'Compilar para Android (ARM64)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('device-mobile'),
+                            command: { command: 'forja.buildAndroid', title: 'Compilar Android' }
+                        },
+                        {
+                            label: 'Desplegar en Android (ADB)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('plug'),
+                            command: { command: 'forja.deployAndroid', title: 'Desplegar Android' }
+                        }
+                    ]
+                },
+                {
+                    label: 'Herramientas de Análisis',
+                    collapsibleState: TreeItemCollapsibleState.Collapsed,
+                    iconPath: new ThemeIcon('beaker'),
+                    children: [
+                        {
+                            label: 'Ejecutar Pruebas (Test)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('beaker'),
+                            command: { command: 'forja.test', title: 'Ejecutar Tests' }
+                        },
+                        {
+                            label: 'Evaluar Rendimiento (Bench)',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('dashboard'),
+                            command: { command: 'forja.bench', title: 'Evaluar Rendimiento' }
+                        },
+                        {
+                            label: 'Formatear Código',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('paintcan'),
+                            command: { command: 'forja.fmt', title: 'Formatear Código' }
+                        },
+                        {
+                            label: 'Mostrar AST',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('symbol-struct'),
+                            command: { command: 'forja.showAST', title: 'Mostrar AST' }
+                        },
+                        {
+                            label: 'Mostrar Bytecode',
+                            collapsibleState: TreeItemCollapsibleState.None,
+                            iconPath: new ThemeIcon('symbol-ruler'),
+                            command: { command: 'forja.showBytecode', title: 'Mostrar Bytecode' }
+                        }
+                    ]
+                }
+            ];
+        }
+        return element.children || [];
     }
 }
