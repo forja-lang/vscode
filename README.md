@@ -1,8 +1,9 @@
-# Forja Syntax — Extensión de VS Code
+# Forja — Extensión de VS Code
 
 [![Marketplace](https://img.shields.io/badge/vscode-marketplace-007ACC?logo=visualstudiocode)](https://github.com/forja-lang/vscode)
+[![CI](https://github.com/forja-lang/vscode/actions/workflows/package.yml/badge.svg)](https://github.com/forja-lang/vscode/actions/workflows/package.yml)
 
-Soporte de sintaxis para el lenguaje de programación **Forja** (archivos `.fa`).
+Extensión oficial para el lenguaje de programación **Forja** (archivos `.fa`) con soporte de sintaxis, LSP, compilación, depuración y toolchain.
 
 ## Características
 
@@ -41,13 +42,16 @@ Soporte de sintaxis para el lenguaje de programación **Forja** (archivos `.fa`)
 code --install-extension forja-syntax-0.3.0.vsix
 ```
 
-## Archivos incluidos
+## Estructura del repositorio
 
-| Archivo | Propósito |
-|---------|-----------|
-| `package.json` | Manifiesto de la extensión: nombre, versión, idioma asociado |
-| `language-configuration.json` | Configuración de comentarios, brackets, auto-cierre, indentación |
-| `syntaxes/forja.tmLanguage.json` | Gramática TextMate completa con todas las reglas de resaltado |
+| Ruta | Propósito |
+|------|-----------|
+| `forja-syntax/` | Código fuente de la extensión |
+| `forja-syntax/package.json` | Manifiesto de la extensión |
+| `forja-syntax/language-configuration.json` | Configuración de comentarios, brackets, auto-cierre, indentación |
+| `forja-syntax/syntaxes/forja.tmLanguage.json` | Gramática TextMate |
+| `forja-syntax/src/` | Código TypeScript de la extensión |
+| `.github/workflows/package.yml` | CI: empaquetado automático del VSIX |
 
 ## Keywords soportadas
 
@@ -59,11 +63,18 @@ coincidir, caso, tipo, verdadero, falso, nulo, arreglo, mapa
 
 ## Desarrollo
 
+```bash
+git clone https://github.com/forja-lang/vscode.git
+cd vscode/forja-syntax
+npm install
+```
+
 Para modificar la extensión:
 
-1. Editá los archivos en `syntaxes/` o `language-configuration.json`
+1. Editá los archivos en `forja-syntax/syntaxes/` o `forja-syntax/language-configuration.json`
 2. Recargá VS Code: `Ctrl+Shift+P` → "Developer: Reload Window"
-3. Opcional: regenerá el VSIX con `vsce package`
+3. Compilá con `npm run compile`
+4. Opcional: regenerá el VSIX con `npx vsce package`
 
 ## Coherencia de paleta
 
