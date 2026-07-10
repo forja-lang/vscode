@@ -10,9 +10,6 @@ permissions:
 jobs:
   package:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: forja-syntax
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,12 +18,19 @@ jobs:
           cache: npm
           cache-dependency-path: forja-syntax/package-lock.json
       - run: npm ci
+        working-directory: forja-syntax
       - run: npm run compile
+        working-directory: forja-syntax
+      - run: rm -f *.vsix
+        working-directory: forja-syntax
       - run: npx vsce package
+        working-directory: forja-syntax
 
       - name: Extract version
         id: version
-        run: echo "tag=v$(node -p 'require(\"./package.json\").version')" >> $GITHUB_OUTPUT
+        run: |
+          ver=$(node -p 'require("./forja-syntax/package.json").version')
+          echo "tag=v${ver}" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: ncipollo/release-action@v1
@@ -38,3 +42,4 @@ jobs:
           makeLatest: true
           allowUpdates: true
           replacesArtifacts: true
+          omitBodyDuringUpdate: true
