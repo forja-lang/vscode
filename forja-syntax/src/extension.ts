@@ -12,6 +12,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { exec, spawn, ChildProcess } from 'child_process';
+import * as vscode from 'vscode';
 import {
     ExtensionContext,
     workspace,
@@ -50,12 +51,6 @@ import {
     TextEditorDecorationType,
     TextDocument,
 } from 'vscode';
-import {
-    LanguageClient,
-    LanguageClientOptions,
-    ServerOptions,
-    TransportKind,
-} from 'vscode-languageclient/node';
 
 import { ForjaReplProvider } from './webviews/repl';
 import { ForjaTutorialProvider } from './webviews/tutorial';
@@ -121,7 +116,7 @@ type TaskName =
 // State
 // ======================================================================
 
-let lspClient: LanguageClient;
+let lspClient: any;
 let outputChannel: OutputChannel;
 let forjaTerminal: Terminal | undefined;
 let statusBarVM: StatusBarItem;
@@ -251,13 +246,15 @@ export function activate(context: ExtensionContext) {
 // ======================================================================
 
 const FORJA_KEYWORDS = [
-    'importar', 'variable', 'var', 'constante', 'const', 'mut', 'si', 'sino',
+    'importar', 'mut', 'si', 'sino',
     'mientras', 'para', 'repetir', 'funcion', 'fun', 'retornar', 'clase',
     'constructor', 'nuevo', 'prestado', 'tipo', 'coincidir', 'caso', 'BD',
     'externo', 'externa', 'hilo', 'canal', 'enviar', 'recibir', 'unir',
     'rasgo', 'implementa', 'donde', 'seleccionar', 'tiempo', 'otro',
     'requiere', 'asegura', 'siempre', 'resultado', 'anterior', 'continuar',
 ];
+
+const FORJA_DECLARATIONS = ['variable', 'var', 'constante', 'const'];
 
 const FORJA_TYPES = ['Entero', 'Decimal', 'Texto', 'Booleano', 'Nulo', 'Exacto'];
 const FORJA_LITERALS = ['verdadero', 'falso', 'nulo'];
@@ -280,20 +277,21 @@ function getDecoTypes(context: ExtensionContext): Record<string, DecoType> {
     if (Object.keys(decoTypes).length > 0) return decoTypes;
 
     const defs: Record<string, string> = {
-        comment:    '#6c7086',
-        string:     '#a6e3a1',
-        char:        '#a6e3a1',
-        number:     '#fab387',
-        boolean:    '#f9e2af',
-        keyword:    '#cba6f7',
-        self:       '#d8b4fe',
-        type:       '#74c7ec',
-        cls:        '#74c7ec',
-        fn:         '#89b4fa',
-        builtin:    '#89b4fa',
-        operator:   '#89dceb',
-        variable:   '#06b6d4',
-        punctuation:'#9399b2',
+        comment:    '#8B8B8B',
+        string:     '#6AAB73',
+        char:        '#6AAB73',
+        number:     '#43A8D6',
+        boolean:    '#3992D6',
+        keyword:    '#CC7832',
+        declaration: '#B27FB0',
+        self:       '#B27FB0',
+        type:       '#43A8D6',
+        cls:        '#43A8D6',
+        fn:         '#B5BC68',
+        builtin:    '#B5BC68',
+        operator:   '#BCBEC4',
+        variable:   '#A9B7C6',
+        punctuation:'#BCBEC4',
     };
 
     for (const [name, color] of Object.entries(defs)) {
@@ -311,6 +309,7 @@ function tokenizeForja(text: string): { name: string; start: number; end: number
 
     const isWordChar = (c: string) => /[a-zA-Z0-9_ñ]/.test(c);
     const kwSet = new Set(FORJA_KEYWORDS);
+    const declSet = new Set(FORJA_DECLARATIONS);
     const tySet = new Set(FORJA_TYPES);
     const litSet = new Set(FORJA_LITERALS);
     const biSet = new Set(FORJA_BUILTINS);
@@ -384,6 +383,8 @@ function tokenizeForja(text: string): { name: string; start: number; end: number
 
             if (word === 'este') {
                 tokens.push({ name: 'self', start: i, end: j });
+            } else if (declSet.has(word)) {
+                tokens.push({ name: 'declaration', start: i, end: j });
             } else if (kwSet.has(word)) {
                 tokens.push({ name: 'keyword', start: i, end: j });
             } else if (litSet.has(word)) {
@@ -469,6 +470,11 @@ function getDecorations(): Record<string, DecoType> {
 function setupForjaHighlighter(context: ExtensionContext) {
     getDecoTypes(context);
 
+    // Apply on open
+    if (window.activeTextEditor) {
+        applyForjaDecorations(window.activeTextEditor);
+    }
+
     // Apply on editor switch
     context.subscriptions.push(
         window.onDidChangeActiveTextEditor((editor) => {
@@ -513,6 +519,16 @@ function startLSPClient(context: ExtensionContext) {
         return;
     }
 
+    let LanguageClient: any, TransportKind: any;
+    try {
+        const lsp = require('vscode-languageclient/node');
+        LanguageClient = lsp.LanguageClient;
+        TransportKind = lsp.TransportKind;
+    } catch {
+        outputChannel.appendLine('vscode-languageclient no disponible — LSP deshabilitado, highlighter sigue activo');
+        return;
+    }
+
     // Determine server path: config override or auto-detect
     let serverPath = workspace.getConfiguration('forja').get<string>('lsp.path', '');
     if (!serverPath) {
@@ -531,24 +547,19 @@ function startLSPClient(context: ExtensionContext) {
                 if (whichResult) {
                     serverPath = whichResult;
                 } else {
-                    outputChannel.appendLine('forja-lsp no encontrado. LSP deshabilitado. Compila con: cargo build --features lsp');
-                    window.showWarningMessage(
-                        'forja-lsp no encontrado. El análisis de código en tiempo real no estará disponible. ' +
-                        'Compila el binario con: cargo build --features lsp',
-                        'Entendido'
-                    );
+                    outputChannel.appendLine('forja-lsp no encontrado. LSP deshabilitado.');
                     return;
                 }
             }
         }
     }
 
-    const serverOptions: ServerOptions = {
+    const serverOptions = {
         run: { command: serverPath, transport: TransportKind.stdio },
         debug: { command: serverPath, transport: TransportKind.stdio },
     };
 
-    const clientOptions: LanguageClientOptions = {
+    const clientOptions = {
         documentSelector: [{ scheme: 'file', language: 'forja' }],
         synchronize: {
             fileEvents: workspace.createFileSystemWatcher('**/*.fa'),
