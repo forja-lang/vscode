@@ -13,7 +13,7 @@ interface Leccion {
 
 const LECCIONES: Leccion[] = [
     {
-        titulo: 'Hola Mundo',
+        titulo: 'Hola mundo',
         descripcion: 'Tu primer programa en Forja',
         concepto: 'Para escribir texto en pantalla se usa la funcion <b>escribir</b>. Todo programa comienza con esta instruccion basica.',
         codigoInicial: 'escribir("Hola Mundo")\n',
@@ -25,7 +25,7 @@ const LECCIONES: Leccion[] = [
         codigoInicial: 'var nombre = "Forja"\nvar edad = 5\n\nescribir("Lenguaje: ", nombre)\nescribir("Edad: ", edad)\n',
     },
     {
-        titulo: 'Tipos de Datos',
+        titulo: 'Tipos de datos',
         descripcion: 'Enteros, decimales, texto, booleanos',
         concepto: 'Forja tiene tipos como <b>Entero</b>, <b>Decimal</b>, <b>Texto</b> y <b>Booleano</b>. Se infieren automaticamente.',
         codigoInicial: 'var entero = 42\nvar decimal = 3.14\nvar texto = "Hola"\nvar verdad = cierto\n\nescribir(entero, " ", decimal, " ", texto, " ", verdad)\n',
@@ -55,9 +55,9 @@ const LECCIONES: Leccion[] = [
         codigoInicial: 'var numeros = [10, 20, 30, 40, 50]\nescribir("Primero: ", numeros[0])\nescribir("Ultimo: ", numeros[4])\n\nnumeros[2] = 99\nescribir("Modificado: ", numeros[2])\n\nescribir("Total elementos: ", numeros.longitud)\n',
     },
     {
-        titulo: 'Cadenas de Texto',
+        titulo: 'Cadenas de texto',
         descripcion: 'Operaciones con texto',
-        concepto: 'Las cadenas soportan interpolacion, concatenacion y varios metodos como <b>longitud</b>, <b>mayusculas</b>, etc.',
+        concepto: 'Las cadenas soportan interpolación, concatenación y varios metodos como <b>longitud</b>, <b>mayusculas</b>, etc.',
         codigoInicial: 'var saludo = "Hola"\nvar nombre = "Forja"\n\nvar mensaje = saludo + " " + nombre + "!"\nescribir(mensaje)\nescribir("Longitud: ", mensaje.longitud)\nescribir("Mayusculas: ", mensaje.mayusculas())\n',
     },
 ];
@@ -151,7 +151,7 @@ export class ForjaTutorialProvider implements vscode.WebviewViewProvider {
             if (err) {
                 this._view?.webview.postMessage({ type: 'output', html: `<span class="error">${err}</span>` });
             }
-            this._view?.webview.postMessage({ type: 'output', html: `<span class="prompt">Codigo terminado (codigo: ${code})</span><br>` });
+            this._view?.webview.postMessage({ type: 'output', html: `<span class="prompt">Código terminado (codigo: ${code})</span><br>` });
         });
     }
 

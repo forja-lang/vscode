@@ -63,14 +63,14 @@ export class ForjaWasmPlaygroundProvider implements vscode.WebviewViewProvider {
 
         child.on('close', (codeExit) => {
             if (codeExit !== 0) {
-                this._postOutput(`<span style="color:#f44747;">Error de compilacion:</span><br>`);
+                this._postOutput(`<span style="color:#f44747;">Error de compilación:</span><br>`);
                 if (stderr) {
                     this._postOutput(`<span style="color:#f44747;">${this._escapeHtml(stderr)}</span><br>`);
                 }
                 return;
             }
 
-            this._postOutput(`<span style="color:#6a9955;">Compilacion WASM exitosa</span><br>`);
+            this._postOutput(`<span style="color:#6a9955;">Compilación WASM exitosa</span><br>`);
 
             // If compiled successfully, try to run with wasm target
             this._postOutput(`<span style="color:#569cd6;">Ejecutando en entorno WASM...</span><br>`);
@@ -140,14 +140,14 @@ export class ForjaWasmPlaygroundProvider implements vscode.WebviewViewProvider {
 <body>
 <div id="toolbar">
     <span class="titulo">Laboratorio WASM</span>
-    <span class="etiqueta">PRUEBA</span>
+    <span class="etiqueta">BETA</span>
     <span class="spacer"></span>
     <button id="btnCompile">Ejecutar</button>
-    <button id="btnClear" class="secundario">limpiar</button>
+    <button id="btnClear" class="secundario">Limpiar</button>
 </div>
 <div id="panels">
     <div id="editor">
-        <textarea id="code" spellcheck="false" placeholder="// Escribe codigo Forja aqui...
+        <textarea id="code" spellcheck="false" placeholder="// Escribe código Forja aqui...
 // Ejemplo:
 escribir("Hola desde WASM!")
 

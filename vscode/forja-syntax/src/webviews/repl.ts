@@ -146,8 +146,8 @@ export class ForjaReplProvider implements vscode.WebviewViewProvider {
 <body>
 <div id="toolbar">
     <span class="titulo">VM</span>
-    <button id="btnClear" title="Limpiar salida">limpiar</button>
-    <button id="btnKill" title="Interrumpir proceso actual">interrumpir</button>
+    <button id="btnClear" title="Limpiar salida">Limpiar</button>
+    <button id="btnKill" title="Interrumpir proceso actual">Interrumpir</button>
     <select id="vmSelect">
         <option value="fastvm">fastVM</option>
         <option value="vm">VM</option>

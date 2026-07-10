@@ -162,19 +162,19 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
         <option value="deps">Dependencias</option>
         <option value="classes">Clases</option>
     </select>
-    <button id="btnGenerate">Generar</button>
-    <button id="btnExport" class="secundario">Exportar SVG</button>
+    <button id="btnGenerate">generar</button>
+    <button id="btnExport" class="secundario">exportar SVG</button>
 </div>
 <div id="panels">
     <div id="canvas">
         <div id="empty-state">
             <div class="icon"></div>
             <div>Genera diagramas de tu codigo Forja</div>
-            <div class="hint">Abre un archivo .fa y haz clic en "Generar"</div>
+            <div class="hint">Abre un archivo .fa y haz clic en "generar"</div>
         </div>
     </div>
     <div id="divider"></div>
-    <div id="info">Selecciona el tipo de diagrama y haz clic en Generar</div>
+    <div id="info">Selecciona el tipo de diagrama y haz clic en generar</div>
 </div>
 <script>
     (function() {
