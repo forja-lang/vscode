@@ -10,14 +10,16 @@
     { "include": "#characters" },
     { "include": "#numbers" },
     { "include": "#literals" },
+    { "include": "#function-definition" },
+    { "include": "#class-definition" },
+    { "include": "#rasgo-definition" },
+    { "include": "#implementa-definition" },
+    { "include": "#type-definition" },
+    { "include": "#new-instance" },
     { "include": "#keywords" },
     { "include": "#types" },
     { "include": "#builtins" },
     { "include": "#attributes" },
-    { "include": "#function-definition" },
-    { "include": "#class-definition" },
-    { "include": "#new-instance" },
-    { "include": "#type-definition" },
     { "include": "#function-call" },
     { "include": "#member-access" },
     { "include": "#type-annotation" },
@@ -78,14 +80,14 @@
       "patterns": [
         {
           "name": "keyword.control.forja",
-          "match": "\\b(importar|variable|var|constante|const|mut|si|sino|mientras|para|repetir|funcion|fun|retornar|clase|constructor|nuevo|este|prestado|tipo|coincidir|caso|BD|externo|externa|hilo|canal|enviar|recibir|unir|rasgo|implementa|donde|seleccionar|tiempo|otro|no)\\b"
+          "match": "\\b(importar|variable|var|constante|const|mut|si|sino|mientras|para|repetir|funcion|fun|retornar|clase|constructor|nuevo|este|prestado|tipo|coincidir|caso|BD|externo|externa|hilo|canal|enviar|recibir|unir|rasgo|implementa|donde|seleccionar|tiempo|otro|requiere|asegura|siempre|resultado|anterior)\\b"
         }
       ]
     },
 
     "types": {
       "name": "storage.type.forja",
-      "match": "\\b(Entero|Decimal|Texto|Booleano|Nulo)\\b"
+      "match": "\\b(Entero|Decimal|Texto|Booleano|Nulo|Exacto)\\b"
     },
 
     "literals": {
@@ -102,7 +104,7 @@
 
     "builtins": {
       "name": "support.function.forja",
-      "match": "\\b(escribir|leer|asegurar|longitud|aleatorio|redondear|potencia|raiz|maximo|minimo|concatenar|insertar|eliminar|contiene|claves|valores|tamaño|a_caracter|a_texto|a_entero|a_decimal|es_entero|es_texto|es_decimal|es_booleano|es_lista|es_mapa|es_nulo|es_arreglo|tiempo_actual|esperar|abrir_archivo|leer_archivo|escribir_archivo|crear_directorio|existe_archivo|conectar|consultar|ejecutar|cerrar|transaccion|guardar)\\b"
+      "match": "\\b(escribir|leer|asegurar|longitud|aleatorio|redondear|potencia|raiz|maximo|minimo|concatenar|insertar|eliminar|contiene|claves|valores|a_caracter|a_texto|a_entero|a_decimal|es_entero|es_texto|es_decimal|es_booleano|es_lista|es_mapa|es_nulo|es_arreglo|tiempo_actual|esperar|abrir_archivo|leer_archivo|escribir_archivo|crear_directorio|existe_archivo|conectar|consultar|ejecutar|cerrar|transaccion|guardar)\\b"
     },
 
     "attributes": {
@@ -128,6 +130,22 @@
 
     "class-definition": {
       "match": "\\b(clase)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+      "captures": {
+        "1": { "name": "keyword.control.forja" },
+        "2": { "name": "entity.name.class.forja" }
+      }
+    },
+
+    "rasgo-definition": {
+      "match": "\\b(rasgo)\\s+([A-Z][a-zA-Z0-9_]*)\\b",
+      "captures": {
+        "1": { "name": "keyword.control.forja" },
+        "2": { "name": "entity.name.class.forja" }
+      }
+    },
+
+    "implementa-definition": {
+      "match": "\\b(implementa)\\s+([A-Z][a-zA-Z0-9_]*)",
       "captures": {
         "1": { "name": "keyword.control.forja" },
         "2": { "name": "entity.name.class.forja" }

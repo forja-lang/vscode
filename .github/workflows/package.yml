@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: write
+
 jobs:
   package:
     runs-on: ubuntu-latest
@@ -20,7 +23,18 @@ jobs:
       - run: npm ci
       - run: npm run compile
       - run: npx vsce package
-      - uses: actions/upload-artifact@v4
+
+      - name: Extract version
+        id: version
+        run: echo "tag=v$(node -p 'require(\"./package.json\").version')" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: ncipollo/release-action@v1
         with:
-          name: vsix
-          path: forja-syntax/*.vsix
+          tag: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          artifacts: forja-syntax/*.vsix
+          generateReleaseNotes: true
+          makeLatest: true
+          allowUpdates: true
+          replacesArtifacts: true
