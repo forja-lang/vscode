@@ -1,17 +1,14 @@
-// Forja Diagram Viewer — Webview v0.4.0
-// Arbol AST interactivo, diagrama de flujo, mapa de dependencias
+// Forja Diagram Viewer — Webview v0.7.0
+// Arbol AST interactivo, diagrama de flujo, mapa de dependencias con zoom y pan
 
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
 
-type DiagramType = 'flow' | 'ast' | 'deps' | 'classes';
-
 export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'forja.diagram';
     private _view?: vscode.WebviewView;
-    private _currentDiagram: DiagramType = 'flow';
 
     constructor(private readonly _extensionUri: vscode.Uri) {}
 
@@ -27,23 +24,14 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
             localResourceRoots: [this._extensionUri],
         };
 
-        webviewView.webview.html = this._getHtml();
-
+        // Escuchar mensajes desde la webview (por ejemplo, para exportar)
         webviewView.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.type) {
-                case 'generate': {
-                    this._currentDiagram = msg.diagramType || 'flow';
-                    const editor = vscode.window.activeTextEditor;
-                    const source = editor?.document.getText() || '';
-                    await this._generateDiagram(source);
-                    break;
-                }
                 case 'exportSvg': {
-                    // Export SVG content
                     const svgContent = msg.svg;
                     const uri = await vscode.window.showSaveDialog({
                         filters: { 'SVG Image': ['svg'] },
-                        defaultUri: vscode.Uri.file('diagram.svg'),
+                        defaultUri: vscode.Uri.file('diagrama.svg'),
                     });
                     if (uri) {
                         fs.writeFileSync(uri.fsPath, svgContent, 'utf-8');
@@ -53,193 +41,298 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
                 }
             }
         });
+
+        // Actualizar diagrama inicialmente
+        this.updateActiveDiagram();
     }
 
-    private async _generateDiagram(source: string) {
-        if (!source.trim()) {
-            this._view?.webview.postMessage({
-                type: 'diagramOutput',
-                html: '<span style="color:#f44747;">No hay codigo fuente. Abre un archivo .fa o escribe codigo.</span>',
-            });
+    public async updateActiveDiagram() {
+        if (!this._view) return;
+
+        const editor = vscode.window.activeTextEditor;
+        if (!editor || editor.document.languageId !== 'forja') {
+            this._view.webview.html = this._getEmptyStateHtml("Abre un archivo Forja (.fa) para ver su diagrama");
             return;
         }
 
+        const source = editor.document.getText();
+        if (!source.trim()) {
+            this._view.webview.html = this._getEmptyStateHtml("El archivo Forja actual está vacío");
+            return;
+        }
+
+        await this._generateDiagram(source);
+    }
+
+    private async _generateDiagram(source: string) {
+        if (!this._view) return;
+
         const cmd = vscode.workspace.getConfiguration('forja').get<string>('diagram.command', 'forja');
-        const diagramFlag = this._currentDiagram === 'ast' ? '--ast'
-            : this._currentDiagram === 'deps' ? '--deps'
-            : this._currentDiagram === 'classes' ? '--classes'
-            : '';
 
-        this._view?.webview.postMessage({
-            type: 'diagramOutput',
-            html: `<span style="color:#569cd6;">Generando diagrama ${this._currentDiagram}...</span><br>`,
-        });
+        // Rutas temporales para la generación del diagrama
+        const extensionDir = path.join(this._extensionUri.fsPath);
+        const tmpFile = path.join(extensionDir, '.diagram_temp.fa');
+        const htmlFile = path.join(extensionDir, '.diagram_temp.html');
 
-        // Save source to temp file and run forja diagram
-        const tmpFile = path.join(__dirname, '..', '..', '.diagram_temp.fa');
         try {
             fs.writeFileSync(tmpFile, source, 'utf-8');
 
-            const child = spawn(cmd, ['diagram', diagramFlag, tmpFile].filter(Boolean), {
+            const child = spawn(cmd, ['diagram', tmpFile, '-o', htmlFile], {
                 windowsHide: true,
                 shell: true,
             });
 
-            let out = '';
             let err = '';
-
-            child.stdout?.on('data', (data: Buffer) => {
-                out += data.toString();
-            });
-
             child.stderr?.on('data', (data: Buffer) => {
                 err += data.toString();
             });
 
             child.on('close', (code) => {
-                if (code === 0 && out) {
-                    this._view?.webview.postMessage({
-                        type: 'diagramOutput',
-                        html: out,
-                    });
-                } else {
-                    this._view?.webview.postMessage({
-                        type: 'diagramOutput',
-                        html: `<span style="color:#f44747;">Error: ${this._escapeHtml(err || 'No se pudo generar el diagrama')}</span>`,
-                    });
-                }
-
-                // Cleanup temp file
+                // Eliminar archivo .fa temporal
                 try { fs.unlinkSync(tmpFile); } catch {}
+
+                if (code === 0 && fs.existsSync(htmlFile)) {
+                    let htmlContent = fs.readFileSync(htmlFile, 'utf-8');
+                    
+                    // Eliminar el archivo HTML generado temporalmente
+                    try { fs.unlinkSync(htmlFile); } catch {}
+
+                    // Inyectar funcionalidad de Pan & Zoom y estilos premium en el HTML
+                    this._view!.webview.html = this._injectPanZoom(htmlContent);
+                } else {
+                    this._view!.webview.html = this._getEmptyStateHtml(`Error al generar diagrama: ${err || 'Proceso falló'}`);
+                }
             });
         } catch (e: any) {
-            this._view?.webview.postMessage({
-                type: 'diagramOutput',
-                html: `<span style="color:#f44747;">Error: ${this._escapeHtml(e.message)}</span>`,
-            });
+            this._view.webview.html = this._getEmptyStateHtml(`Error: ${e.message}`);
         }
     }
 
-    private _escapeHtml(text: string): string {
-        return text.replace(/&/g, '&').replace(/</g, '<').replace(/>/g, '>');
+    private _injectPanZoom(html: string): string {
+        const styleOverride = `
+<style>
+    /* Estilos Premium y soporte para Zoom y Paneo */
+    body {
+        margin: 0;
+        padding: 10px;
+        height: 100vh;
+        overflow: hidden;
+        background: #0d1117;
+        font-family: system-ui, -apple-system, sans-serif;
+    }
+    .hd {
+        margin-bottom: 12px;
+        padding: 8px 12px;
+        background: #161b22;
+        border-radius: 6px;
+        border: 1px solid #30363d;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: nowrap;
+    }
+    .hd h1 {
+        font-size: 1.05em;
+        margin-right: auto;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .stats {
+        font-size: 0.8em;
+        color: #8b949e;
+        margin-right: 10px;
+    }
+    button {
+        background: #21262d;
+        color: #c9d1d9;
+        border: 1px solid #30363d;
+        padding: 4px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: .8em;
+        white-space: nowrap;
+        transition: background 0.2s, border-color 0.2s;
+    }
+    button:hover {
+        background: #30363d;
+        border-color: #8b949e;
+    }
+    button.a {
+        background: #1f6feb;
+        border-color: #388bfd;
+    }
+    
+    #va, #vf {
+        position: relative;
+        overflow: hidden !important;
+        height: calc(100vh - 75px) !important;
+        border-radius: 8px;
+        border: 1px solid #30363d;
+        background: #161b22;
     }
 
-    private _getHtml(): string {
+    /* Ocultar scrollbars nativas de los contenedores para usar drag */
+    .v {
+        overflow: hidden !important;
+    }
+
+    /* Animaciones suaves para transiciones de zoom */
+    .zoom-wrapper {
+        position: absolute;
+        transform-origin: 0 0;
+        cursor: grab;
+        user-select: none;
+        width: max-content;
+        height: max-content;
+        min-width: 100%;
+        min-height: 100%;
+        padding: 30px;
+        box-sizing: border-box;
+    }
+    .zoom-wrapper:active {
+        cursor: grabbing;
+    }
+</style>
+`;
+
+        const scriptPanZoom = `
+<script>
+    // Configuración nativa de Pan & Zoom para los diagramas de Forja
+    function initPanZoom(containerId) {
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        // Crear contenedor interno de zoom
+        const wrapper = document.createElement('div');
+        wrapper.className = 'zoom-wrapper';
+        
+        // Mover todos los elementos hijos originales al wrapper
+        while (container.firstChild) {
+            wrapper.appendChild(container.firstChild);
+        }
+        container.appendChild(wrapper);
+
+        let scale = 1.0;
+        let translateX = 10;
+        let translateY = 10;
+        let isDragging = false;
+        let startX = 0;
+        let startY = 0;
+
+        const updateTransform = () => {
+            wrapper.style.transform = \`translate(\${translateX}px, \${translateY}px) scale(\${scale})\`;
+        };
+
+        // Centrado inicial
+        updateTransform();
+
+        // Control del zoom mediante la rueda del ratón
+        container.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomFactor = 1.08;
+            const rect = container.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            // Posición del cursor relativa al contenido antes del zoom
+            const contentX = (mouseX - translateX) / scale;
+            const contentY = (mouseY - translateY) / scale;
+
+            if (e.deltaY < 0) {
+                scale = Math.min(scale * zoomFactor, 8.0);
+            } else {
+                scale = Math.max(scale / zoomFactor, 0.25);
+            }
+
+            // Reposicionar para centrar zoom en el cursor
+            translateX = mouseX - contentX * scale;
+            translateY = mouseY - contentY * scale;
+
+            updateTransform();
+        }, { passive: false });
+
+        // Arrastrar (Paneo)
+        container.addEventListener('mousedown', (e) => {
+            // Solo botón izquierdo del ratón
+            if (e.button !== 0) return;
+            isDragging = true;
+            startX = e.clientX - translateX;
+            startY = e.clientY - translateY;
+            e.preventDefault();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            translateX = e.clientX - startX;
+            translateY = e.clientY - startY;
+            updateTransform();
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+        });
+
+        // Resetear con doble clic
+        container.addEventListener('dblclick', () => {
+            scale = 1.0;
+            translateX = 10;
+            translateY = 10;
+            updateTransform();
+        });
+    }
+
+    // Inicializar pan y zoom en ambos diagramas
+    setTimeout(() => {
+        initPanZoom('va');
+        initPanZoom('vf');
+    }, 100);
+</script>
+`;
+
+        // Insertar estilos justo antes de </head>
+        let updatedHtml = html.replace('</head>', `${styleOverride}</head>`);
+        
+        // Insertar script de zoom justo antes de </body>
+        updatedHtml = updatedHtml.replace('</body>', `${scriptPanZoom}</body>`);
+
+        return updatedHtml;
+    }
+
+    private _getEmptyStateHtml(message: string): string {
         return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; background: #1e1e1e; color: #d4d4d4; height: 100vh; display: flex; flex-direction: column; }
-    #toolbar { display: flex; gap: 6px; padding: 8px; background: #2d2d2d; border-bottom: 1px solid #3c3c3c; align-items: center; flex-shrink: 0; flex-wrap: wrap; }
-    #toolbar select { background: #3c3c3c; color: #ccc; border: 1px solid #555; padding: 4px 8px; font-size: 12px; border-radius: 3px; }
-    #toolbar button { background: #0e639c; color: white; border: none; padding: 4px 12px; cursor: pointer; font-size: 12px; border-radius: 3px; }
-    #toolbar button:hover { background: #1177bb; }
-    #toolbar button.secundario { background: #3c3c3c; }
-    #toolbar button.secundario:hover { background: #505050; }
-    #toolbar .titulo { flex: 1; font-size: 12px; color: #888; }
-    #panels { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-    #canvas { flex: 1; overflow: auto; padding: 12px; }
-    #canvas svg { width: 100%; height: auto; min-height: 200px; }
-    #canvas .placeholder { color: #888; text-align: center; padding: 40px 20px; font-size: 14px; }
-    #empty-state { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #888; padding: 20px; }
-    #empty-state .icon { font-size: 48px; margin-bottom: 12px; }
-    #empty-state .hint { font-size: 12px; margin-top: 8px; color: #555; }
-    #divider { height: 5px; background: #2d2d2d; cursor: row-resize; flex-shrink: 0; border-top: 1px solid #3c3c3c; border-bottom: 1px solid #3c3c3c; display: none; }
-    #divider:hover { background: #3c3c3c; }
-    #info { padding: 8px 12px; font-size: 11px; color: #888; flex-shrink: 0; border-top: 1px solid #3c3c3c; }
-    .mermaid { font-family: 'Consolas', 'Courier New', monospace; white-space: pre-wrap; }
+    body {
+        font-family: system-ui, -apple-system, sans-serif;
+        background: #0d1117;
+        color: #8b949e;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        padding: 20px;
+        text-align: center;
+    }
+    .icon {
+        font-size: 40px;
+        margin-bottom: 12px;
+        color: #30363d;
+    }
+    .msg {
+        font-size: 13px;
+        max-width: 250px;
+        line-height: 1.4;
+    }
 </style>
 </head>
 <body>
-<div id="toolbar">
-    <span class="titulo">Diagramas</span>
-    <select id="diagramType">
-        <option value="flow">Diagrama de flujo</option>
-        <option value="ast">Arbol AST</option>
-        <option value="deps">Dependencias</option>
-        <option value="classes">Clases</option>
-    </select>
-    <button id="btnGenerate">generar</button>
-    <button id="btnExport" class="secundario">exportar SVG</button>
-</div>
-<div id="panels">
-    <div id="canvas">
-        <div id="empty-state">
-            <div class="icon"></div>
-            <div>Genera diagramas de tu codigo Forja</div>
-            <div class="hint">Abre un archivo .fa y haz clic en "generar"</div>
-        </div>
-    </div>
-    <div id="divider"></div>
-    <div id="info">Selecciona el tipo de diagrama y haz clic en generar</div>
-</div>
-<script>
-    (function() {
-        const vscode = acquireVsCodeApi();
-        const canvas = document.getElementById('canvas');
-        const diagramType = document.getElementById('diagramType');
-        const btnGenerate = document.getElementById('btnGenerate');
-        const btnExport = document.getElementById('btnExport');
-        const divider = document.getElementById('divider');
-        const info = document.getElementById('info');
-        const panels = document.getElementById('panels');
-
-        // Divider arrastrable
-        let dragging = false;
-        divider.addEventListener('mousedown', (e) => {
-            dragging = true;
-            document.body.style.cursor = 'row-resize';
-            document.body.style.userSelect = 'none';
-        });
-        document.addEventListener('mousemove', (e) => {
-            if (!dragging) return;
-            const panelRect = panels.getBoundingClientRect();
-            const dividerHeight = divider.offsetHeight;
-            const infoHeight = info.offsetHeight;
-            const newCanvasHeight = e.clientY - panelRect.top;
-            const newInfoHeight = panelRect.bottom - e.clientY - dividerHeight;
-            if (newCanvasHeight > 100 && newInfoHeight > 30) {
-                canvas.style.flex = 'none';
-                canvas.style.height = newCanvasHeight + 'px';
-            }
-        });
-        document.addEventListener('mouseup', () => {
-            if (dragging) {
-                dragging = false;
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-            }
-        });
-
-        btnGenerate.addEventListener('click', () => {
-            vscode.postMessage({
-                type: 'generate',
-                diagramType: diagramType.value,
-            });
-        });
-
-        btnExport.addEventListener('click', () => {
-            const svg = canvas.querySelector('svg');
-            if (svg) {
-                vscode.postMessage({ type: 'exportSvg', svg: svg.outerHTML });
-            } else {
-                vscode.postMessage({ type: 'showMessage', text: 'No hay diagrama para exportar' });
-            }
-        });
-
-        window.addEventListener('message', (e) => {
-            const msg = e.data;
-            if (msg.type === 'diagramOutput') {
-                canvas.innerHTML = msg.html;
-            }
-            if (msg.type === 'setSource') {
-            }
-        });
-    })();
-</script>
+    <div class="icon">📊</div>
+    <div class="msg">${message}</div>
 </body>
 </html>`;
     }

@@ -52,16 +52,7 @@ import {
     TextDocument,
 } from 'vscode';
 
-import { ForjaReplProvider } from './webviews/repl';
-import { ForjaTutorialProvider } from './webviews/tutorial';
-import { ForjaWasmPlaygroundProvider } from './webviews/wasm';
 import { ForjaDiagramProvider } from './webviews/diagram';
-import {
-    ForjaExamplesProvider,
-    StdlibBrowserProvider,
-    ProjectOutlineProvider,
-    ForjaDevToolsProvider,
-} from './treeviews';
 
 // ======================================================================
 // Hot Reload State
@@ -172,53 +163,17 @@ export function activate(context: ExtensionContext) {
     );
 
     // ── Webview Providers (Fase 4) ──
-    const replProvider = new ForjaReplProvider(context.extensionUri);
-    context.subscriptions.push(
-        window.registerWebviewViewProvider(ForjaReplProvider.viewType, replProvider)
-    );
-
-    const tutorialProvider = new ForjaTutorialProvider(context.extensionUri);
-    context.subscriptions.push(
-        window.registerWebviewViewProvider(ForjaTutorialProvider.viewType, tutorialProvider)
-    );
-
-    const wasmProvider = new ForjaWasmPlaygroundProvider(context.extensionUri);
-    context.subscriptions.push(
-        window.registerWebviewViewProvider(ForjaWasmPlaygroundProvider.viewType, wasmProvider)
-    );
-
     const diagramProvider = new ForjaDiagramProvider(context.extensionUri);
     context.subscriptions.push(
         window.registerWebviewViewProvider(ForjaDiagramProvider.viewType, diagramProvider)
     );
 
-    // ── Tree View Providers (Fase 7.2) ──
-    const projectOutlineProvider = new ProjectOutlineProvider();
-    context.subscriptions.push(
-        window.registerTreeDataProvider('forja.projectOutline', projectOutlineProvider)
-    );
-
-    const devToolsProvider = new ForjaDevToolsProvider();
-    context.subscriptions.push(
-        window.registerTreeDataProvider('forja.devTools', devToolsProvider)
-    );
-
-    // Refresh outline on active editor change
+    // Refresh diagram on active editor change
     context.subscriptions.push(
         window.onDidChangeActiveTextEditor(() => {
-            projectOutlineProvider.refresh();
             updateToolbarVisibility();
+            diagramProvider.updateActiveDiagram();
         })
-    );
-
-    const examplesProvider = new ForjaExamplesProvider(context);
-    context.subscriptions.push(
-        window.registerTreeDataProvider('forja.examples', examplesProvider)
-    );
-
-    const stdlibProvider = new StdlibBrowserProvider(context);
-    context.subscriptions.push(
-        window.registerTreeDataProvider('forja.stdlib', stdlibProvider)
     );
 
     // ── Hot Reload Status Bar ──
@@ -230,6 +185,9 @@ export function activate(context: ExtensionContext) {
     // ── Hot Reload on Save ──
     context.subscriptions.push(
         workspace.onDidSaveTextDocument(async (doc) => {
+            if (doc.languageId === 'forja') {
+                diagramProvider.updateActiveDiagram();
+            }
             if (!hotReloadEnabled) return;
             if (doc.languageId !== 'forja') return;
 
@@ -718,24 +676,7 @@ function registerCommands(context: ExtensionContext) {
     });
     context.subscriptions.push(cmdRunGUI);
 
-    // Open REPL (Webview)
-    const cmdRepl = commands.registerCommand('forja.runRepl', () => {
-        // Focus the REPL webview view
-        commands.executeCommand('workbench.view.extension.forja-repl');
-    });
-    context.subscriptions.push(cmdRepl);
 
-    // ── Webview Commands (Fase 4) ──
-
-    const cmdOpenTutorial = commands.registerCommand('forja.openTutorial', () => {
-        commands.executeCommand('workbench.view.extension.forja-tutorial');
-    });
-    context.subscriptions.push(cmdOpenTutorial);
-
-    const cmdOpenWasm = commands.registerCommand('forja.openWasmPlayground', () => {
-        commands.executeCommand('workbench.view.extension.forja-wasm');
-    });
-    context.subscriptions.push(cmdOpenWasm);
 
     const cmdOpenDiagram = commands.registerCommand('forja.openDiagram', () => {
         commands.executeCommand('workbench.view.extension.forja-diagram');
@@ -1040,90 +981,6 @@ function registerCommands(context: ExtensionContext) {
     });
     context.subscriptions.push(cmdShowOutput);
 
-    // ── Developer Tools (Fase 7.3) ──
-
-    // Show AST of active file
-    const cmdShowAST = commands.registerCommand('forja.showAST', async () => {
-        const editor = window.activeTextEditor;
-        if (!editor || editor.document.languageId !== 'forja') {
-            window.showErrorMessage('No hay un archivo Forja activo');
-            return;
-        }
-        const source = editor.document.getText();
-        try {
-            const terminal = getOrCreateTerminal();
-            terminal.sendText(`forja ast "${editor.document.fileName}"`);
-            terminal.show();
-        } catch (e: any) {
-            window.showErrorMessage(`Error: ${e.message}`);
-        }
-    });
-    context.subscriptions.push(cmdShowAST);
-
-    // Show Bytecode of active file
-    const cmdShowBytecode = commands.registerCommand('forja.showBytecode', async () => {
-        const editor = window.activeTextEditor;
-        if (!editor || editor.document.languageId !== 'forja') {
-            window.showErrorMessage('No hay un archivo Forja activo');
-            return;
-        }
-        try {
-            const terminal = getOrCreateTerminal();
-            terminal.sendText(`forja build "${editor.document.fileName}" --emit-bytecode`);
-            terminal.show();
-        } catch (e: any) {
-            window.showErrorMessage(`Error: ${e.message}`);
-        }
-    });
-    context.subscriptions.push(cmdShowBytecode);
-
-    // Open stdlib file
-    const cmdOpenStdlib = commands.registerCommand('forja.openStdlib', async () => {
-        const wsFolders = workspace.workspaceFolders;
-        if (!wsFolders || wsFolders.length === 0) {
-            window.showErrorMessage('No hay workspace abierto');
-            return;
-        }
-        const stdlibPath = path.join(wsFolders[0].uri.fsPath, 'stdlib');
-        if (!fs.existsSync(stdlibPath)) {
-            window.showErrorMessage('La carpeta stdlib no existe en el workspace actual');
-            return;
-        }
-        try {
-            const files = fs.readdirSync(stdlibPath).filter(f => f.endsWith('.fa'));
-            const picked = await window.showQuickPick(files, {
-                placeHolder: 'Seleccionar archivo de stdlib',
-            });
-            if (picked) {
-                const doc = await workspace.openTextDocument(path.join(stdlibPath, picked));
-                await window.showTextDocument(doc);
-            }
-        } catch (e: any) {
-            window.showErrorMessage(`Error: ${e.message}`);
-        }
-    });
-    context.subscriptions.push(cmdOpenStdlib);
-
-    // Open file (used by TreeView commands)
-    const cmdOpenFile = commands.registerCommand('forja.openFile', (uri: Uri) => {
-        workspace.openTextDocument(uri).then(doc => window.showTextDocument(doc));
-    });
-    context.subscriptions.push(cmdOpenFile);
-
-    // Reveal line (used by Project Outline)
-    const cmdRevealLine = commands.registerCommand('forja.revealLine', (uri: Uri, line: number) => {
-        workspace.openTextDocument(uri).then(doc => {
-            window.showTextDocument(doc).then(editor => {
-                const position = editor.selection.active.with(line - 1, 0);
-                editor.selection = new Selection(position, position);
-                editor.revealRange(
-                    new Range(position, position),
-                    TextEditorRevealType.InCenter
-                );
-            });
-        });
-    });
-    context.subscriptions.push(cmdRevealLine);
 }
 
 /**

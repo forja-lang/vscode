@@ -29,15 +29,12 @@
     "onCommand:forja.runAOT",
     "onCommand:forja.runDebug",
     "onCommand:forja.runGUI",
-    "onCommand:forja.runRepl",
     "onCommand:forja.build",
     "onCommand:forja.buildASM",
-    "onCommand:forja.buildAndroid",
     "onCommand:forja.buildWASM",
     "onCommand:forja.test",
     "onCommand:forja.bench",
     "onCommand:forja.fmt",
-    "onCommand:forja.doc",
     "onCommand:forja.diagram",
     "onCommand:forja.transpile",
     "onCommand:forja.hotReload",
@@ -48,28 +45,12 @@
     "onCommand:forja.showOutput",
     "onCommand:forja.installToolchain",
     "onCommand:forja.toggleHotReload",
-    "onCommand:forja.openTutorial",
-    "onCommand:forja.openWasmPlayground",
     "onCommand:forja.openDiagram",
-    "onCommand:forja.buildAndroid.arm64",
-    "onCommand:forja.buildAndroid.x86_64",
-    "onCommand:forja.buildAndroid.all",
-    "onCommand:forja.checkAndroidNDK",
-    "onCommand:forja.deployAndroid",
     "onDebug",
     "onDebugInitialConfigurations",
     "onCommand:forja.showAST",
     "onCommand:forja.showBytecode",
-    "onCommand:forja.openStdlib",
-    "onCommand:forja.openFile",
-    "onCommand:forja.revealLine",
-    "onView:forja.repl",
-    "onView:forja.tutorial",
-    "onView:forja.wasmPlayground",
-    "onView:forja.diagram",
-    "onView:forja.projectOutline",
-    "onView:forja.examples",
-    "onView:forja.stdlib"
+    "onView:forja.diagram"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -106,52 +87,10 @@
     "views": {
       "forja-sidebar": [
         {
-          "type": "tree",
-          "id": "forja.devTools",
-          "name": "Herramientas de Desarrollo",
-          "icon": "$(tools)"
-        },
-        {
-          "type": "tree",
-          "id": "forja.projectOutline",
-          "name": "Estructura",
-          "icon": "$(symbol-misc)"
-        },
-        {
-          "type": "tree",
-          "id": "forja.examples",
-          "name": "Ejemplos Forja",
-          "icon": "$(book)"
-        },
-        {
-          "type": "tree",
-          "id": "forja.stdlib",
-          "name": "Explorador de Biblioteca",
-          "icon": "$(library)"
-        },
-        {
-          "type": "webview",
-          "id": "forja.repl",
-          "name": "VM",
-          "icon": "$(terminal)"
-        },
-        {
           "type": "webview",
           "id": "forja.diagram",
           "name": "Diagramas",
           "icon": "$(graph)"
-        },
-        {
-          "type": "webview",
-          "id": "forja.tutorial",
-          "name": "Tutorial",
-          "icon": "$(book)"
-        },
-        {
-          "type": "webview",
-          "id": "forja.wasmPlayground",
-          "name": "Laboratorio WASM",
-          "icon": "$(globe)"
         }
       ],
       "panel": []
