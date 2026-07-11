@@ -142,197 +142,197 @@
     "commands": [
       {
         "command": "forja.run",
-        "title": "Forja: Ejecutar archivo (VM clasica)",
+        "title": "Forja: ejecutar",
         "icon": "$(play)"
       },
       {
         "command": "forja.runFast",
-        "title": "Forja: Ejecutar con FastVM",
+        "title": "Forja: ejecutar con FastVM",
         "icon": "$(zap)"
       },
       {
         "command": "forja.runJIT",
-        "title": "Forja: Ejecutar con JIT (nativo con reemplazo)",
+        "title": "Forja: ejecutar con JIT",
         "icon": "$(rocket)"
       },
       {
         "command": "forja.runAOT",
-        "title": "Forja: Compilar AOT y ejecutar",
+        "title": "Forja: compilar AOT y ejecutar",
         "icon": "$(tools)"
       },
       {
         "command": "forja.runDebug",
-        "title": "Forja: Ejecutar en modo depuracion",
+        "title": "Forja: ejecutar en modo depuración",
         "icon": "$(bug)"
       },
       {
         "command": "forja.runGUI",
-        "title": "Forja: Ejecutar con interfaz nativa",
+        "title": "Forja: ejecutar con interfaz nativa",
         "icon": "$(window)"
       },
       {
         "command": "forja.runRepl",
-        "title": "Forja: Abrir REPL interactivo",
+        "title": "Forja: abrir VM interactiva",
         "icon": "$(terminal)"
       },
       {
         "command": "forja.build",
-        "title": "Forja: Compilar a bytecode",
+        "title": "Forja: compilar a Bytecode",
         "icon": "$(gear)"
       },
       {
         "command": "forja.buildASM",
-        "title": "Forja: Compilar a codigo maquina nativo",
+        "title": "Forja: compilar a ASM",
         "icon": "$(chip)"
       },
       {
         "command": "forja.buildAndroid",
-        "title": "Forja: Compilar para Android (multiplataforma)",
+        "title": "Forja: compilar para Android",
         "icon": "$(device-mobile)"
       },
       {
         "command": "forja.buildWASM",
-        "title": "Forja: Compilar a WebAssembly",
+        "title": "Forja: compilar a WebAssembly",
         "icon": "$(globe)"
       },
       {
         "command": "forja.test",
-        "title": "Forja: Ejecutar pruebas",
+        "title": "Forja: ejecutar prueba",
         "icon": "$(beaker)"
       },
       {
         "command": "forja.bench",
-        "title": "Forja: Evaluar rendimiento",
+        "title": "Forja: evaluar rendimiento",
         "icon": "$(dashboard)"
       },
       {
         "command": "forja.fmt",
-        "title": "Forja: Formatear archivo",
+        "title": "Forja: formatear archivo",
         "icon": "$(paintcan)"
       },
       {
         "command": "forja.doc",
-        "title": "Forja: Generar documentacion HTML",
+        "title": "Forja: generar documentacion HTML",
         "icon": "$(book)"
       },
       {
         "command": "forja.diagram",
-        "title": "Forja: Generar diagrama del programa",
+        "title": "Forja: generar diagrama",
         "icon": "$(graph)"
       },
       {
         "command": "forja.transpile",
-        "title": "Forja: Transpilar a Rust",
+        "title": "Forja: transpilar a Rust",
         "icon": "$(symbol-file)"
       },
       {
         "command": "forja.hotReload",
-        "title": "Forja: Recarga en caliente (recargar modulo activo)",
+        "title": "Forja: recarga en caliente",
         "icon": "$(sync)"
       },
       {
         "command": "forja.hotRestart",
-        "title": "Forja: Reinicio en caliente (reinicio rapido de interfaz)",
+        "title": "Forja: reinicio en caliente",
         "icon": "$(refresh)"
       },
       {
         "command": "forja.newProject",
-        "title": "Forja: Nuevo proyecto...",
+        "title": "Forja: crear nuevo proyecto",
         "icon": "$(new-folder)"
       },
       {
         "command": "forja.selectVM",
-        "title": "Forja: Seleccionar maquina virtual por omision",
+        "title": "Forja: seleccionar maquina virtual por omisión",
         "icon": "$(vm)"
       },
       {
         "command": "forja.selectTarget",
-        "title": "Forja: Seleccionar plataforma objetivo",
+        "title": "Forja: seleccionar plataforma",
         "icon": "$(target)"
       },
       {
         "command": "forja.showOutput",
-        "title": "Forja: Mostrar salida",
+        "title": "Forja: mostrar salida",
         "icon": "$(output)"
       },
       {
         "command": "forja.installToolchain",
-        "title": "Forja: Instalar o verificar el entorno de compilacion",
+        "title": "Forja: instalar o verificar el entorno de compilación",
         "icon": "$(package)"
       },
       {
         "command": "forja.openTutorial",
-        "title": "Forja: Abrir tutorial interactivo",
+        "title": "Forja: abrir tutorial interactivo",
         "icon": "$(book)"
       },
       {
         "command": "forja.openWasmPlayground",
-        "title": "Forja: Abrir laboratorio WebAssembly",
+        "title": "Forja: abrir laboratorio WebAssembly",
         "icon": "$(globe)"
       },
       {
         "command": "forja.openDiagram",
-        "title": "Forja: Abrir visor de diagramas",
+        "title": "Forja: abrir visor de diagramas",
         "icon": "$(graph)"
       },
       {
         "command": "forja.toggleSidebar",
-        "title": "Forja: Alternar panel lateral (Toggle Sidebar)",
+        "title": "Forja: alternar panel lateral",
         "icon": "$(sidebar-right)"
       },
       {
         "command": "forja.toggleHotReload",
-        "title": "Forja: Activar o desactivar Recarga en Caliente",
+        "title": "Forja: activar o desactivar recarga en caliente",
         "icon": "$(sync-ignored)"
       },
       {
         "command": "forja.buildAndroid.arm64",
-        "title": "Forja: Compilar para Android ARM64",
+        "title": "Forja: compilar para Android ARM64",
         "icon": "$(device-mobile)"
       },
       {
         "command": "forja.buildAndroid.x86_64",
-        "title": "Forja: Compilar para Android x86_64",
+        "title": "Forja: compilar para Android x86_64",
         "icon": "$(device-mobile)"
       },
       {
         "command": "forja.buildAndroid.all",
-        "title": "Forja: Compilar para Android (todos los objetivos)",
+        "title": "Forja: compilar para Android (todos los objetivos)",
         "icon": "$(device-mobile)"
       },
       {
         "command": "forja.checkAndroidNDK",
-        "title": "Forja: Verificar NDK Android",
+        "title": "Forja: verificar NDK Android",
         "icon": "$(check)"
       },
       {
         "command": "forja.deployAndroid",
-        "title": "Forja: Desplegar en dispositivo Android",
+        "title": "Forja: desplegar en dispositivo Android",
         "icon": "$(plug)"
       },
       {
         "command": "forja.showAST",
-        "title": "Forja: Mostrar AST del archivo activo",
+        "title": "Forja: mostrar AST",
         "icon": "$(symbol-struct)"
       },
       {
         "command": "forja.showBytecode",
-        "title": "Forja: Mostrar bytecode generado",
+        "title": "Forja: mostrar Bytecode generado",
         "icon": "$(symbol-ruler)"
       },
       {
         "command": "forja.openStdlib",
-        "title": "Forja: Abrir archivo de la biblioteca",
+        "title": "Forja: abrir archivo de la biblioteca",
         "icon": "$(library)"
       },
       {
         "command": "forja.openFile",
-        "title": "Forja: Abrir archivo (uso interno)",
+        "title": "Forja: abrir archivo",
         "icon": "$(go-to-file)"
       },
       {
         "command": "forja.revealLine",
-        "title": "Forja: Ir a linea (uso interno)",
+        "title": "Forja: ir a linea",
         "icon": "$(go-to-file)"
       }
     ],
@@ -625,7 +625,7 @@
         "forja.diagram.command": {
           "type": "string",
           "default": "forja",
-          "description": "Comando o ruta absoluta al compilador Forja para generar diagramas. (Ej: C:\\Users\\gaucho\\.cargo\\bin\\forja.exe)"
+          "description": "Comando o ruta absoluta al compilador Forja para generar diagramas."
         },
         "forja.lsp.path": {
           "type": "string",
@@ -646,8 +646,8 @@
             "jit"
           ],
           "enumDescriptions": [
-            "ForjaFast (VM ultra-rápida, por defecto)",
-            "ForjaVM clásica (estable y probada)",
+            "ForjaFast (por defecto)",
+            "VM  (estable y probada)",
             "JIT nativo con fallback a VM"
           ],
           "description": "Máquina virtual por defecto para ejecución"
@@ -662,7 +662,7 @@
             "x86_64-linux-android",
             "wasm32-unknown-unknown"
           ],
-          "description": "Plataforma target por defecto para compilación"
+          "description": "Plataforma objetivo por defecto para compilación"
         },
         "forja.buildArgs": {
           "type": "string",
@@ -682,7 +682,7 @@
         "forja.hotReload.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Habilitar Hot Reload automático al guardar archivos .fa"
+          "description": "Habilitar recarga en caliente automático al guardar archivos .fa"
         },
         "forja.checkDiagnosticsOnSave": {
           "type": "boolean",

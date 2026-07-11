@@ -761,7 +761,7 @@ function registerCommands(context: ExtensionContext) {
         const adbPath = findOnPath('adb');
         if (!adbPath) {
             window.showErrorMessage(
-                'ADB no encontrado en PATH. Instala Android Platform Tools.',
+                'ADB no encontrado en PATH. Instala Android Platform Tools o agregalo la dirección en PATH.',
                 'Entendido'
             );
             return;

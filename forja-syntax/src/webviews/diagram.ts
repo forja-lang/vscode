@@ -12,7 +12,7 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
     private _isReady = false;
     private _lastCode?: string;
 
-    constructor(private readonly _extensionUri: vscode.Uri) {}
+    constructor(private readonly _extensionUri: vscode.Uri) { }
 
     resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -26,7 +26,10 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
             localResourceRoots: [this._extensionUri],
         };
 
-        webviewView.webview.html = this._getHtml();
+        const mediaPath = vscode.Uri.joinPath(this._extensionUri, 'media');
+        const mermaidUri = webviewView.webview.asWebviewUri(vscode.Uri.joinPath(mediaPath, 'mermaid.min.js'));
+
+        webviewView.webview.html = this._getHtml(mermaidUri);
 
         // Escuchar mensajes desde la webview (por ejemplo, para exportar o cuando esté lista)
         webviewView.webview.onDidReceiveMessage(async (msg) => {
@@ -51,7 +54,7 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
                     });
                     if (uri) {
                         fs.writeFileSync(uri.fsPath, svgContent, 'utf-8');
-                        vscode.window.showInformationMessage(`Diagrama guardado: ${uri.fsPath}`);
+                        vscode.window.showInformationMessage(`Diagrama guardado en: ${uri.fsPath}`);
                     }
                     break;
                 }
@@ -67,7 +70,7 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
             this._lastCode = undefined;
             this._view.webview.postMessage({
                 type: 'emptyState',
-                message: 'Abre un archivo Forja (.fa) para ver su diagrama Mermaid'
+                message: 'Abre un archivo Forja (.fa) para ver su diagrama'
             });
             return;
         }
@@ -110,13 +113,13 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
 
             child.on('close', (code) => {
                 // Eliminar archivo .fa temporal
-                try { fs.unlinkSync(tmpFile); } catch {}
+                try { fs.unlinkSync(tmpFile); } catch { }
 
                 if (code === 0 && fs.existsSync(mmdFile)) {
                     let mmdContent = fs.readFileSync(mmdFile, 'utf-8');
-                    
+
                     // Eliminar el archivo MMD generado temporalmente
-                    try { fs.unlinkSync(mmdFile); } catch {}
+                    try { fs.unlinkSync(mmdFile); } catch { }
 
                     this._lastCode = mmdContent;
 
@@ -130,7 +133,7 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
                 } else {
                     this._view!.webview.postMessage({
                         type: 'error',
-                        message: `Error al generar diagrama Mermaid: ${err || 'Proceso falló'}`
+                        message: `Error al generar diagrama: ${err || 'Proceso falló'}`
                     });
                 }
             });
@@ -142,14 +145,14 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private _getHtml(): string {
+    private _getHtml(mermaidUri: vscode.Uri): string {
         return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- Carga de Mermaid.js para renderizado nativo en la Webview -->
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script src="${mermaidUri}"></script>
 <style>
     body {
         margin: 0;
@@ -254,13 +257,12 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
 <body>
 <div class="hd">
     <h1>Diagrama Mermaid</h1>
-    <button id="btnReset">Reiniciar Vista</button>
-    <button id="btnExport">Exportar SVG</button>
+    <button id="btnReset">Reiniciar</button>
+    <button id="btnExport">SVG</button>
 </div>
 <div id="container">
     <div id="zoom-wrapper">
         <div class="state-container">
-            <div class="state-icon">📊</div>
             <div>Cargando visor de diagramas...</div>
         </div>
     </div>
@@ -331,7 +333,7 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
         const contentY = (mouseY - translateY) / scale;
 
         if (e.deltaY < 0) {
-            scale = Math.min(scale * zoomFactor, 50.0);
+            scale = Math.min(scale * zoomFactor, 1000.0);
         } else {
             scale = Math.max(scale / zoomFactor, 0.01);
         }
@@ -389,7 +391,7 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
             } catch (err) {
                 wrapper.innerHTML = \`<div class="state-container">
                     <div class="state-icon" style="color: #f85149;">❌</div>
-                    <div style="color: #f85149;">Error al renderizar Mermaid</div>
+                    <div style="color: #f85149;">Error al renderizar</div>
                     <div style="font-size: 0.85em; max-width: 300px; margin-top: 8px;">\${err.message || err}</div>
                 </div>\`;
             }
