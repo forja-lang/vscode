@@ -46,6 +46,7 @@
     "onCommand:forja.installToolchain",
     "onCommand:forja.toggleHotReload",
     "onCommand:forja.openDiagram",
+    "onCommand:forja.toggleSidebar",
     "onDebug",
     "onDebugInitialConfigurations",
     "onCommand:forja.showAST",
@@ -273,6 +274,11 @@
         "command": "forja.openDiagram",
         "title": "Forja: Abrir visor de diagramas",
         "icon": "$(graph)"
+      },
+      {
+        "command": "forja.toggleSidebar",
+        "title": "Forja: Alternar panel lateral (Toggle Sidebar)",
+        "icon": "$(sidebar-right)"
       },
       {
         "command": "forja.toggleHotReload",
@@ -520,6 +526,10 @@
           "when": "resourceLangId == forja"
         },
         {
+          "command": "forja.toggleSidebar",
+          "when": "resourceLangId == forja"
+        },
+        {
           "command": "forja.toggleHotReload",
           "when": "resourceLangId == forja"
         },
@@ -612,6 +622,11 @@
     "configuration": {
       "title": "Forja",
       "properties": {
+        "forja.diagram.command": {
+          "type": "string",
+          "default": "forja",
+          "description": "Comando o ruta absoluta al compilador Forja para generar diagramas. (Ej: C:\\Users\\gaucho\\.cargo\\bin\\forja.exe)"
+        },
         "forja.lsp.path": {
           "type": "string",
           "default": "",

@@ -679,9 +679,14 @@ function registerCommands(context: ExtensionContext) {
 
 
     const cmdOpenDiagram = commands.registerCommand('forja.openDiagram', () => {
-        commands.executeCommand('workbench.view.extension.forja-diagram');
+        commands.executeCommand('workbench.view.extension.forja-sidebar');
     });
     context.subscriptions.push(cmdOpenDiagram);
+
+    const cmdToggleSidebar = commands.registerCommand('forja.toggleSidebar', () => {
+        commands.executeCommand('workbench.view.extension.forja-sidebar');
+    });
+    context.subscriptions.push(cmdToggleSidebar);
 
     // ── Build Commands ──
 

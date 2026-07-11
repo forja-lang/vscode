@@ -1,5 +1,5 @@
 // Forja Diagram Viewer — Webview v0.7.0
-// Arbol AST interactivo, diagrama de flujo, mapa de dependencias con zoom y pan
+// Renderiza diagramas de flujo nativos en formato Mermaid estándar con Zoom y Pan
 
 import * as vscode from 'vscode';
 import * as path from 'path';
@@ -9,6 +9,8 @@ import { spawn } from 'child_process';
 export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'forja.diagram';
     private _view?: vscode.WebviewView;
+    private _isReady = false;
+    private _lastCode?: string;
 
     constructor(private readonly _extensionUri: vscode.Uri) {}
 
@@ -24,9 +26,23 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
             localResourceRoots: [this._extensionUri],
         };
 
-        // Escuchar mensajes desde la webview (por ejemplo, para exportar)
+        webviewView.webview.html = this._getHtml();
+
+        // Escuchar mensajes desde la webview (por ejemplo, para exportar o cuando esté lista)
         webviewView.webview.onDidReceiveMessage(async (msg) => {
             switch (msg.type) {
+                case 'ready': {
+                    this._isReady = true;
+                    if (this._lastCode) {
+                        this._view?.webview.postMessage({
+                            type: 'renderMermaid',
+                            code: this._lastCode
+                        });
+                    } else {
+                        this.updateActiveDiagram();
+                    }
+                    break;
+                }
                 case 'exportSvg': {
                     const svgContent = msg.svg;
                     const uri = await vscode.window.showSaveDialog({
@@ -41,9 +57,6 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
                 }
             }
         });
-
-        // Actualizar diagrama inicialmente
-        this.updateActiveDiagram();
     }
 
     public async updateActiveDiagram() {
@@ -51,13 +64,21 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
 
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== 'forja') {
-            this._view.webview.html = this._getEmptyStateHtml("Abre un archivo Forja (.fa) para ver su diagrama");
+            this._lastCode = undefined;
+            this._view.webview.postMessage({
+                type: 'emptyState',
+                message: 'Abre un archivo Forja (.fa) para ver su diagrama Mermaid'
+            });
             return;
         }
 
         const source = editor.document.getText();
         if (!source.trim()) {
-            this._view.webview.html = this._getEmptyStateHtml("El archivo Forja actual está vacío");
+            this._lastCode = undefined;
+            this._view.webview.postMessage({
+                type: 'emptyState',
+                message: 'El archivo Forja actual está vacío'
+            });
             return;
         }
 
@@ -72,12 +93,12 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
         // Rutas temporales para la generación del diagrama
         const extensionDir = path.join(this._extensionUri.fsPath);
         const tmpFile = path.join(extensionDir, '.diagram_temp.fa');
-        const htmlFile = path.join(extensionDir, '.diagram_temp.html');
+        const mmdFile = path.join(extensionDir, '.diagram_temp.mmd');
 
         try {
             fs.writeFileSync(tmpFile, source, 'utf-8');
 
-            const child = spawn(cmd, ['diagram', tmpFile, '-o', htmlFile], {
+            const child = spawn(cmd, ['diagram', tmpFile, '-o', mmdFile], {
                 windowsHide: true,
                 shell: true,
             });
@@ -91,35 +112,57 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
                 // Eliminar archivo .fa temporal
                 try { fs.unlinkSync(tmpFile); } catch {}
 
-                if (code === 0 && fs.existsSync(htmlFile)) {
-                    let htmlContent = fs.readFileSync(htmlFile, 'utf-8');
+                if (code === 0 && fs.existsSync(mmdFile)) {
+                    let mmdContent = fs.readFileSync(mmdFile, 'utf-8');
                     
-                    // Eliminar el archivo HTML generado temporalmente
-                    try { fs.unlinkSync(htmlFile); } catch {}
+                    // Eliminar el archivo MMD generado temporalmente
+                    try { fs.unlinkSync(mmdFile); } catch {}
 
-                    // Inyectar funcionalidad de Pan & Zoom y estilos premium en el HTML
-                    this._view!.webview.html = this._injectPanZoom(htmlContent);
+                    this._lastCode = mmdContent;
+
+                    // Enviar la sintaxis Mermaid a la webview si ya está lista
+                    if (this._isReady) {
+                        this._view!.webview.postMessage({
+                            type: 'renderMermaid',
+                            code: mmdContent
+                        });
+                    }
                 } else {
-                    this._view!.webview.html = this._getEmptyStateHtml(`Error al generar diagrama: ${err || 'Proceso falló'}`);
+                    this._view!.webview.postMessage({
+                        type: 'error',
+                        message: `Error al generar diagrama Mermaid: ${err || 'Proceso falló'}`
+                    });
                 }
             });
         } catch (e: any) {
-            this._view.webview.html = this._getEmptyStateHtml(`Error: ${e.message}`);
+            this._view.webview.postMessage({
+                type: 'error',
+                message: `Error: ${e.message}`
+            });
         }
     }
 
-    private _injectPanZoom(html: string): string {
-        const styleOverride = `
+    private _getHtml(): string {
+        return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- Carga de Mermaid.js para renderizado nativo en la Webview -->
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 <style>
-    /* Estilos Premium y soporte para Zoom y Paneo */
     body {
         margin: 0;
         padding: 10px;
         height: 100vh;
         overflow: hidden;
         background: #0d1117;
+        color: #c9d1d9;
         font-family: system-ui, -apple-system, sans-serif;
+        display: flex;
+        flex-direction: column;
     }
+    
     .hd {
         margin-bottom: 12px;
         padding: 8px 12px;
@@ -129,20 +172,18 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
         display: flex;
         align-items: center;
         gap: 8px;
-        flex-wrap: nowrap;
+        flex-shrink: 0;
     }
+    
     .hd h1 {
         font-size: 1.05em;
+        margin: 0;
         margin-right: auto;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
-    .stats {
-        font-size: 0.8em;
-        color: #8b949e;
-        margin-right: 10px;
-    }
+    
     button {
         background: #21262d;
         color: #c9d1d9;
@@ -154,185 +195,220 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
         white-space: nowrap;
         transition: background 0.2s, border-color 0.2s;
     }
+    
     button:hover {
         background: #30363d;
         border-color: #8b949e;
     }
-    button.a {
-        background: #1f6feb;
-        border-color: #388bfd;
-    }
     
-    #va, #vf {
+    #container {
+        flex: 1;
         position: relative;
-        overflow: hidden !important;
-        height: calc(100vh - 75px) !important;
+        overflow: hidden;
         border-radius: 8px;
         border: 1px solid #30363d;
         background: #161b22;
+        cursor: grab;
     }
-
-    /* Ocultar scrollbars nativas de los contenedores para usar drag */
-    .v {
-        overflow: hidden !important;
+    
+    #container:active {
+        cursor: grabbing;
     }
-
-    /* Animaciones suaves para transiciones de zoom */
-    .zoom-wrapper {
+    
+    #zoom-wrapper {
         position: absolute;
         transform-origin: 0 0;
-        cursor: grab;
-        user-select: none;
         width: max-content;
         height: max-content;
         min-width: 100%;
         min-height: 100%;
         padding: 30px;
         box-sizing: border-box;
-    }
-    .zoom-wrapper:active {
-        cursor: grabbing;
-    }
-</style>
-`;
-
-        const scriptPanZoom = `
-<script>
-    // Configuración nativa de Pan & Zoom para los diagramas de Forja
-    function initPanZoom(containerId) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-
-        // Crear contenedor interno de zoom
-        const wrapper = document.createElement('div');
-        wrapper.className = 'zoom-wrapper';
-        
-        // Mover todos los elementos hijos originales al wrapper
-        while (container.firstChild) {
-            wrapper.appendChild(container.firstChild);
-        }
-        container.appendChild(wrapper);
-
-        let scale = 1.0;
-        let translateX = 10;
-        let translateY = 10;
-        let isDragging = false;
-        let startX = 0;
-        let startY = 0;
-
-        const updateTransform = () => {
-            wrapper.style.transform = \`translate(\${translateX}px, \${translateY}px) scale(\${scale})\`;
-        };
-
-        // Centrado inicial
-        updateTransform();
-
-        // Control del zoom mediante la rueda del ratón
-        container.addEventListener('wheel', (e) => {
-            e.preventDefault();
-            const zoomFactor = 1.08;
-            const rect = container.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-
-            // Posición del cursor relativa al contenido antes del zoom
-            const contentX = (mouseX - translateX) / scale;
-            const contentY = (mouseY - translateY) / scale;
-
-            if (e.deltaY < 0) {
-                scale = Math.min(scale * zoomFactor, 8.0);
-            } else {
-                scale = Math.max(scale / zoomFactor, 0.25);
-            }
-
-            // Reposicionar para centrar zoom en el cursor
-            translateX = mouseX - contentX * scale;
-            translateY = mouseY - contentY * scale;
-
-            updateTransform();
-        }, { passive: false });
-
-        // Arrastrar (Paneo)
-        container.addEventListener('mousedown', (e) => {
-            // Solo botón izquierdo del ratón
-            if (e.button !== 0) return;
-            isDragging = true;
-            startX = e.clientX - translateX;
-            startY = e.clientY - translateY;
-            e.preventDefault();
-        });
-
-        window.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            translateX = e.clientX - startX;
-            translateY = e.clientY - startY;
-            updateTransform();
-        });
-
-        window.addEventListener('mouseup', () => {
-            isDragging = false;
-        });
-
-        // Resetear con doble clic
-        container.addEventListener('dblclick', () => {
-            scale = 1.0;
-            translateX = 10;
-            translateY = 10;
-            updateTransform();
-        });
+        display: flex;
+        justify-content: center;
+        align-items: center;
     }
 
-    // Inicializar pan y zoom en ambos diagramas
-    setTimeout(() => {
-        initPanZoom('va');
-        initPanZoom('vf');
-    }, 100);
-</script>
-`;
-
-        // Insertar estilos justo antes de </head>
-        let updatedHtml = html.replace('</head>', `${styleOverride}</head>`);
-        
-        // Insertar script de zoom justo antes de </body>
-        updatedHtml = updatedHtml.replace('</body>', `${scriptPanZoom}</body>`);
-
-        return updatedHtml;
+    #zoom-wrapper svg {
+        max-width: 100%;
+        height: auto;
     }
 
-    private _getEmptyStateHtml(message: string): string {
-        return `<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<style>
-    body {
-        font-family: system-ui, -apple-system, sans-serif;
-        background: #0d1117;
-        color: #8b949e;
+    .state-container {
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        height: 100vh;
-        margin: 0;
-        padding: 20px;
+        height: 100%;
         text-align: center;
+        color: #8b949e;
+        padding: 20px;
     }
-    .icon {
+    
+    .state-icon {
         font-size: 40px;
         margin-bottom: 12px;
-        color: #30363d;
-    }
-    .msg {
-        font-size: 13px;
-        max-width: 250px;
-        line-height: 1.4;
     }
 </style>
 </head>
 <body>
-    <div class="icon">📊</div>
-    <div class="msg">${message}</div>
+<div class="hd">
+    <h1>Diagrama Mermaid</h1>
+    <button id="btnReset">Reiniciar Vista</button>
+    <button id="btnExport">Exportar SVG</button>
+</div>
+<div id="container">
+    <div id="zoom-wrapper">
+        <div class="state-container">
+            <div class="state-icon">📊</div>
+            <div>Cargando visor de diagramas...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const vscode = acquireVsCodeApi();
+    const container = document.getElementById('container');
+    const wrapper = document.getElementById('zoom-wrapper');
+    const btnReset = document.getElementById('btnReset');
+    const btnExport = document.getElementById('btnExport');
+
+    // Inicializar Mermaid
+    mermaid.initialize({
+        startOnLoad: false,
+        theme: 'dark',
+        securityLevel: 'loose'
+    });
+
+    let scale = 1.0;
+    let translateX = 0;
+    let translateY = 0;
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+
+    const updateTransform = () => {
+        wrapper.style.transform = \`translate(\${translateX}px, \${translateY}px) scale(\${scale})\`;
+    };
+
+    // Pan (arrastrar)
+    container.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return; // Solo click izquierdo
+        isDragging = true;
+        startX = e.clientX - translateX;
+        startY = e.clientY - translateY;
+        e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+        translateX = e.clientX - startX;
+        translateY = e.clientY - startY;
+        updateTransform();
+    });
+
+    window.addEventListener('mouseup', () => {
+        isDragging = false;
+    });
+
+    window.addEventListener('mouseleave', () => {
+        isDragging = false;
+    });
+
+    window.addEventListener('blur', () => {
+        isDragging = false;
+    });
+
+    // Zoom (rueda mouse)
+    container.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const zoomFactor = 1.08;
+        const rect = container.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const contentX = (mouseX - translateX) / scale;
+        const contentY = (mouseY - translateY) / scale;
+
+        if (e.deltaY < 0) {
+            scale = Math.min(scale * zoomFactor, 50.0);
+        } else {
+            scale = Math.max(scale / zoomFactor, 0.01);
+        }
+
+        translateX = mouseX - contentX * scale;
+        translateY = mouseY - contentY * scale;
+
+        updateTransform();
+    }, { passive: false });
+
+    // Resetear
+    btnReset.addEventListener('click', () => {
+        scale = 1.0;
+        translateX = 0;
+        translateY = 0;
+        updateTransform();
+    });
+
+    container.addEventListener('dblclick', () => {
+        scale = 1.0;
+        translateX = 0;
+        translateY = 0;
+        updateTransform();
+    });
+
+    // Exportar
+    btnExport.addEventListener('click', () => {
+        const svgElement = wrapper.querySelector('svg');
+        if (svgElement) {
+            let svgContent = svgElement.outerHTML;
+            // Reemplazar <br> no cerrados por <br /> para cumplir con la especificación estricta de XML/SVG
+            svgContent = svgContent.replace(/<br(?!\s*\/)>/gi, '<br />');
+            vscode.postMessage({
+                type: 'exportSvg',
+                svg: svgContent
+            });
+        }
+    });
+
+    // Escuchar mensajes desde la extensión
+    window.addEventListener('message', async (event) => {
+        const msg = event.data;
+        if (msg.type === 'renderMermaid') {
+            try {
+                // Renderizar código Mermaid usando un ID único cada vez
+                const id = 'mermaid-' + Date.now();
+                const { svg } = await mermaid.render(id, msg.code);
+                wrapper.innerHTML = svg;
+                
+                // Centrar automáticamente
+                scale = 1.0;
+                translateX = 0;
+                translateY = 0;
+                updateTransform();
+            } catch (err) {
+                wrapper.innerHTML = \`<div class="state-container">
+                    <div class="state-icon" style="color: #f85149;">❌</div>
+                    <div style="color: #f85149;">Error al renderizar Mermaid</div>
+                    <div style="font-size: 0.85em; max-width: 300px; margin-top: 8px;">\${err.message || err}</div>
+                </div>\`;
+            }
+        } else if (msg.type === 'emptyState') {
+            wrapper.innerHTML = \`<div class="state-container">
+                <div class="state-icon">📊</div>
+                <div>\${msg.message}</div>
+            </div>\`;
+        } else if (msg.type === 'error') {
+            wrapper.innerHTML = \`<div class="state-container">
+                <div class="state-icon" style="color: #f85149;">⚠️</div>
+                <div style="color: #f85149;">\${msg.message}</div>
+            </div>\`;
+        }
+    });
+
+    // Indicar a la extensión que la webview está lista
+    vscode.postMessage({ type: 'ready' });
+</script>
 </body>
 </html>`;
     }
