@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/lococoi/forja.git"
+    "url": "https://github.com/forja-lang/forja.git"
   },
   "engines": {
     "vscode": "^1.60.0"
