@@ -1,2 +1,10 @@
 forja-syntax/node_modules/
 forja-syntax/out
+
+# ── Ejecutables ──
+*.exe
+
+# ── Markdown: solo raíz o README ──
+*.md
+!/*.md
+!README.md
