@@ -1,4 +1,4 @@
-// Forja Diagram Viewer — Webview v0.8.3
+// Forja Diagram Viewer — Webview v0.8.5
 // Renderiza diagramas de flujo nativos en formato Mermaid estándar con Zoom y Pan
 
 import * as vscode from 'vscode';
