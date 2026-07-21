@@ -2,7 +2,7 @@
   "name": "forja-syntax",
   "displayName": "Forja (fa)",
   "description": "Soporte completo para el lenguaje Forja — sintaxis, LSP, compilación, debug, toolchain",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "publisher": "lococoi",
   "license": "MIT",
   "repository": {
