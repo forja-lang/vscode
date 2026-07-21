@@ -27,11 +27,13 @@
 		"body": [
 			"si ${1:condicion} {",
 			"\t${2:// bloque}",
-			"}${3: sino {",
-			"\t${4:// bloque falso}",
+			"}${3: o si ${4:condicion} {",
+			"\t${5:// bloque o si}",
+			"}}${6: sino {",
+			"\t${7:// bloque falso}",
 			"}}"
 		],
-		"description": "Condicional si/sino"
+		"description": "Condicional si/o si/sino"
 	},
 	"While loop": {
 		"scope": "source.forja",
@@ -258,5 +260,11 @@
 		"prefix": "doc",
 		"body": "/// ${1:documentación}",
 		"description": "Comentario de documentación (///)"
+	},
+	"Ternary operator": {
+		"scope": "source.forja",
+		"prefix": ["ternario", "ifexp"],
+		"body": "${1:condicion} ? ${2:valor_verdadero} : ${3:valor_falso}",
+		"description": "Expresión condicional ternaria (cond ? verdadero : falso)"
 	}
 }

@@ -225,11 +225,11 @@ export function activate(context: ExtensionContext) {
 // ======================================================================
 
 const FORJA_KEYWORDS = [
-    'importar', 'mut', 'si', 'sino',
+    'importar', 'mut', 'si', 'sino', 'o',
     'mientras', 'para', 'repetir', 'funcion', 'fun', 'retornar', 'clase',
     'constructor', 'nuevo', 'prestado', 'tipo', 'coincidir', 'caso', 'BD',
     'externo', 'externa', 'hilo', 'canal', 'enviar', 'recibir', 'unir',
-    'rasgo', 'implementa', 'donde', 'seleccionar', 'tiempo', 'otro',
+    'rasgo', 'implementa', 'donde', 'seleccionar', 'tiempo', 'otro', 'cuando',
     'requiere', 'asegura', 'siempre', 'resultado', 'anterior', 'continuar',
 ];
 
@@ -256,21 +256,22 @@ function getDecoTypes(context: ExtensionContext): Record<string, DecoType> {
     if (Object.keys(decoTypes).length > 0) return decoTypes;
 
     const defs: Record<string, string> = {
-        comment:    '#8B8B8B',
-        string:     '#6AAB73',
-        char:        '#6AAB73',
-        number:     '#43A8D6',
-        boolean:    '#3992D6',
-        keyword:    '#CC7832',
+        comment: '#8B8B8B',
+        string: '#6AAB73',
+        char: '#6AAB73',
+        number: '#43A8D6',
+        boolean: '#3992D6',
+        keyword: '#CC7832',
         declaration: '#B27FB0',
-        self:       '#B27FB0',
-        type:       '#43A8D6',
-        cls:        '#43A8D6',
-        fn:         '#B5BC68',
-        builtin:    '#B5BC68',
-        operator:   '#BCBEC4',
-        variable:   '#A9B7C6',
-        punctuation:'#BCBEC4',
+        self: '#B27FB0',
+        type: '#43A8D6',
+        cls: '#43A8D6',
+        fn: '#B5BC68',
+        builtin: '#B5BC68',
+        operator: '#BCBEC4',
+        variable: '#A9B7C6',
+        punctuation: '#BCBEC4',
+        attribute: '#BBB529',
     };
 
     for (const [name, color] of Object.entries(defs)) {
@@ -297,6 +298,14 @@ function tokenizeForja(text: string): { name: string; start: number; end: number
         const c = text[i];
 
         // Comments: #, //, ///, /* */
+        if (c === '@') {
+            let j = i + 1;
+            while (j < len && /[a-zA-Z0-9_]/.test(text[j])) j++;
+            tokens.push({ name: 'attribute', start: i, end: j });
+            i = j;
+            continue;
+        }
+
         if (c === '#') {
             let end = text.indexOf('\n', i);
             if (end === -1) end = len;
@@ -581,7 +590,7 @@ let toolbarItems: ToolbarItem[] = [
 function updateToolbarVisibility() {
     const editor = window.activeTextEditor;
     const isForja = editor && editor.document.languageId === 'forja';
-    
+
     for (const item of toolbarItems) {
         if (item.statusBarItem) {
             if (isForja) {
@@ -599,8 +608,8 @@ function updateStatusBar() {
 
     const targetLabel = currentTarget === 'native' ? 'Nativo'
         : currentTarget === 'wasm32-unknown-unknown' ? 'WASM'
-        : currentTarget.includes('android') ? 'Android'
-        : currentTarget;
+            : currentTarget.includes('android') ? 'Android'
+                : currentTarget;
     statusBarTarget.text = `$(target) ${targetLabel}`;
     statusBarTarget.show();
 
@@ -937,7 +946,7 @@ function registerCommands(context: ExtensionContext) {
             label: `${VM_ICONS[mode]} ${VM_LABELS[mode]}`,
             description: mode === 'fastvm' ? 'Por defecto, ultra-rápida'
                 : mode === 'vm' ? 'VM original, estable'
-                : 'Compilación JIT nativa con fallback',
+                    : 'Compilación JIT nativa con fallback',
             value: mode,
         }));
 
@@ -961,8 +970,8 @@ function registerCommands(context: ExtensionContext) {
             label: `$(target) ${target}`,
             description: target === 'native' ? 'Plataforma actual (por defecto)'
                 : target === 'wasm32-unknown-unknown' ? 'WebAssembly'
-                : target.includes('android') ? 'Android (cross-compile)'
-                : 'Windows MSVC',
+                    : target.includes('android') ? 'Android (cross-compile)'
+                        : 'Windows MSVC',
             value: target,
         }));
 
@@ -1009,7 +1018,7 @@ function killProcess(filePath: string): Promise<void> {
             } else {
                 proc.kill('SIGTERM');
                 setTimeout(() => {
-                    try { proc.kill('SIGKILL'); } catch {}
+                    try { proc.kill('SIGKILL'); } catch { }
                     resolve();
                 }, 2000);
             }
@@ -1151,7 +1160,7 @@ function getOrCreateTerminal(): Terminal {
 // ======================================================================
 
 class ForjaDebugAdapterDescriptorFactory implements DebugAdapterDescriptorFactory {
-    constructor(private context: ExtensionContext) {}
+    constructor(private context: ExtensionContext) { }
 
     createDebugAdapterDescriptor(_session: DebugSession): DebugAdapterDescriptor | undefined {
         const dapPath = findDapBinary(this.context);
@@ -1281,7 +1290,7 @@ class ForjaPseudoterminal implements Pseudoterminal {
     readonly onDidWrite = this.writeEmitter.event;
     readonly onDidClose = this.closeEmitter.event;
 
-    constructor(private command: string) {}
+    constructor(private command: string) { }
 
     open(_initialDimensions: any): void {
         this.writeEmitter.fire(`Ejecutando: ${this.command}\r\n\r\n`);
