@@ -4,7 +4,7 @@
 // Fase 4: Webviews (REPL, Tutorial, WASM Playground, Diagram Viewer)
 // Fase 5: Hot Reload / Hot Restart
 // Fase 6: Cross-compilation Android
-// Fase 7: Tree Views (Project Outline, Forja Examples, Stdlib Browser)
+// Fase 7: Tree Views (Project Outline, Forja ejemplos, Stdlib Browser)
 // Proporciona 30+ comandos, status bar con selector de VM/target,
 // terminal dedicada, task provider, snippets, configuraciones, debug DAP,
 // paneles webview interactivos, y tree views con análisis de proyecto.
