@@ -1,6 +1,6 @@
 # 🔥 Forja para Visual Studio Code
 
-[![Version](https://img.shields.io/badge/version-0.9.1-007ACC?logo=visualstudiocode)](https://github.com/forja-lang/forja)
+[![Version](https://img.shields.io/badge/version-0.9.2-007ACC?logo=visualstudiocode)](https://github.com/forja-lang/forja)
 [![Marketplace](https://img.shields.io/badge/vscode-marketplace-007ACC?logo=visualstudiocode)](https://github.com/forja-lang/forja)
 [![Licencia](https://img.shields.io/badge/license-MIT-green)](LICENSE.md)
 
@@ -111,7 +111,7 @@ Extensión oficial del lenguaje **Forja (fa)** para Visual Studio Code — un le
 | Token | Color | CSS/ANSI | Elementos |
 |-------|-------|----------|-----------|
 | `keyword` | `#f59e0b` 🔶 | `var(--fuego-light)` | `variable`, `si`, `funcion`, `clase`, `coincidir`, etc. |
-| `function` | `#10b981` 🟢 | `var(--verde)` | `escribir()`, `leer()` |
+| `function` | `#10.9.2` 🟢 | `var(--verde)` | `escribir()`, `leer()` |
 | `type` | `#06b6d4` 🔷 | `var(--cian)` | `Entero`, `Decimal`, `Texto`, `Booleano` |
 | `string` | `#fbbf24` ⭐ | gold | Texto entre comillas dobles |
 | `comment` | `#5b6a84` 🌫️ | `var(--text-muted)` | Líneas con `//` |
@@ -149,7 +149,7 @@ La paleta de colores de esta extensión es idéntica a la usada en el comando CL
 ### Desde terminal
 
 ```bash
-code --install-extension forja-syntax-0.9.1.vsix
+code --install-extension forja-syntax-0.9.2.vsix
 ```
 
 ---
@@ -201,7 +201,7 @@ Para desarrollo:
 
 ## 📝 Notas de versión
 
-**Versión actual: 0.9.1** — Soporte completo para el lenguaje Forja: sintaxis, LSP, compilación, depuración y toolchain multi-plataforma.
+**Versión actual: 0.9.2** — Soporte completo para el lenguaje Forja: sintaxis, LSP, compilación, depuración y toolchain multi-plataforma.
 
 ---
 
