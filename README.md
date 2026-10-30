@@ -1,6 +1,6 @@
 # 🔥 Forja para Visual Studio Code
 
-[![Version](https://img.shields.io/badge/version-0.9.5-007ACC?logo=visualstudiocode)](https://github.com/forja-lang/forja)
+[![Version](https://img.shields.io/badge/version-0.9.6-007ACC?logo=visualstudiocode)](https://github.com/forja-lang/forja)
 [![Marketplace](https://img.shields.io/badge/vscode-marketplace-007ACC?logo=visualstudiocode)](https://github.com/forja-lang/forja)
 [![Licencia](https://img.shields.io/badge/license-MIT-green)](LICENSE.md)
 
@@ -149,7 +149,7 @@ La paleta de colores de esta extensión es idéntica a la usada en el comando CL
 ### Desde terminal
 
 ```bash
-code --install-extension forja-syntax-0.9.5.vsix
+code --install-extension forja-syntax-0.9.6.vsix
 ```
 
 ---
@@ -201,7 +201,7 @@ Para desarrollo:
 
 ## 📝 Notas de versión
 
-**Versión actual: 0.9.5** — Soporte completo para el lenguaje Forja: sintaxis, LSP, compilación, depuración y toolchain multi-plataforma.
+**Versión actual: 0.9.6** — Soporte completo para el lenguaje Forja: sintaxis, LSP, compilación, depuración y toolchain multi-plataforma.
 
 ---
 
