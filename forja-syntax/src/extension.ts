@@ -1,13 +1,20 @@
-// Forja VSCode Extension — Enhanced v0.4.0
-// Fase 2: Commands, Status Bar, Terminal, Tasks, Config
-// Fase 3: Debug Adapter Protocol (DebugAdapterDescriptorFactory + DebugConfigurationProvider)
-// Fase 4: Webviews (REPL, Tutorial, WASM Playground, Diagram Viewer)
-// Fase 5: Hot Reload / Hot Restart
-// Fase 6: Cross-compilation Android
-// Fase 7: Tree Views (Project Outline, Forja ejemplos, Stdlib Browser)
-// Proporciona 30+ comandos, status bar con selector de VM/target,
-// terminal dedicada, task provider, snippets, configuraciones, debug DAP,
-// paneles webview interactivos, y tree views con análisis de proyecto.
+/**
+ * Extensión de VS Code para el lenguaje Forja (.fa).
+ *
+ * Punto de entrada de la extensión: registra comandos, barra de estado,
+ * terminal dedicada, provisión de tareas, adaptador de depuración (DAP),
+ * paneles webview y el resaltado sintáctico propio.
+ *
+ * Organización del archivo (en orden de aparición):
+ *   1. Estado global y constantes.
+ *   2. Ciclo de vida (activar / desactivar).
+ *   3. Resaltado sintáctico manual (lexer propio en TypeScript).
+ *   4. Cliente LSP (servidor `forja-lsp` por stdio).
+ *   5. Barra de estado y barra de herramientas.
+ *   6. Registro de comandos.
+ *   7. Gestión de procesos y recarga en caliente.
+ *   8. Depuración (DAP), tareas y utilidades del sistema.
+ */
 
 import * as path from 'path';
 import * as fs from 'fs';
@@ -52,51 +59,75 @@ import {
     TextDocument,
 } from 'vscode';
 
-import { ForjaDiagramProvider } from './webviews/diagram';
+import { ProveedorDiagramaForja } from './webviews/diagram';
 
 // ======================================================================
-// Hot Reload State
+// Estado de la recarga en caliente
 // ======================================================================
 
-// Variable to hold the hot reload status bar item (created in activate)
-let hotReloadStatus: StatusBarItem;
+/** Ítem de la barra de estado que refleja si la recarga en caliente está activa. */
+let estadoRecargaCaliente: StatusBarItem;
 
-interface RunningProcess {
-    process: ChildProcess;
-    file: string;
-    startTime: number;
-    mode: 'run' | 'gui';
+/** Proceso del usuario que la extensión mantiene vivo para la recarga en caliente. */
+interface ProcesoEnEjecucion {
+    /** Handle del proceso hijo lanzado con `spawn`. */
+    proceso: ChildProcess;
+    /** Ruta absoluta del archivo `.fa` que se está ejecutando. */
+    archivo: string;
+    /** Marca de tiempo (epoch en milisegundos) del arranque. */
+    momentoInicio: number;
+    /** Modo de ejecución con el que se lanzó el proceso. */
+    modo: 'run' | 'gui';
 }
 
-let runningProcesses: Map<string, RunningProcess> = new Map();
-let hotReloadEnabled = true;
+/** Procesos vivos indexados por la ruta absoluta del archivo en ejecución. */
+let procesosEnEjecucion: Map<string, ProcesoEnEjecucion> = new Map();
+
+/** Indica si la recarga automática al guardar está habilitada. */
+let recargaCalienteActiva = true;
 
 // ======================================================================
-// Constants
+// Constantes
 // ======================================================================
 
-const OUTPUT_CHANNEL_NAME = 'Forja';
-const TERMINAL_NAME = 'Forja';
+/** Nombre del canal de salida que agrupa todos los mensajes de la extensión. */
+const NOMBRE_CANAL_SALIDA = 'Forja';
 
-type VMMode = 'fastvm' | 'vm' | 'jit';
-type TargetPlatform = 'native' | 'x86_64-pc-windows-msvc' | 'aarch64-linux-android' | 'x86_64-linux-android' | 'wasm32-unknown-unknown';
+/** Nombre de la terminal integrada dedicada a los comandos de Forja. */
+const NOMBRE_TERMINAL = 'Forja';
 
-const VM_MODES: VMMode[] = ['fastvm', 'vm', 'jit'];
-const TARGETS: TargetPlatform[] = ['native', 'x86_64-pc-windows-msvc', 'aarch64-linux-android', 'x86_64-linux-android', 'wasm32-unknown-unknown'];
+/** Modos de máquina virtual que admite el ejecutable `forja`. */
+type ModoVM = 'fastvm' | 'vm' | 'jit';
 
-const VM_LABELS: Record<VMMode, string> = {
+/** Plataformas de compilación que admite el ejecutable `forja`. */
+type PlataformaObjetivo = 'native'
+    | 'x86_64-pc-windows-msvc'
+    | 'aarch64-linux-android'
+    | 'x86_64-linux-android'
+    | 'wasm32-unknown-unknown';
+
+/** Lista ordenada de modos de VM disponibles para el selector rápido. */
+const MODOS_VM: ModoVM[] = ['fastvm', 'vm', 'jit'];
+
+/** Lista ordenada de plataformas objetivo disponibles para el selector rápido. */
+const PLATAFORMAS: PlataformaObjetivo[] = ['native', 'x86_64-pc-windows-msvc', 'aarch64-linux-android', 'x86_64-linux-android', 'wasm32-unknown-unknown'];
+
+/** Etiqueta legible que se muestra en la barra de estado para cada modo de VM. */
+const ETIQUETAS_VM: Record<ModoVM, string> = {
     'fastvm': 'FastVM',
     'vm': 'VM Clásica',
     'jit': 'JIT Nativo',
 };
 
-const VM_ICONS: Record<VMMode, string> = {
+/** Iconos codicon que acompañan a cada modo de VM en la interfaz. */
+const ICONOS_VM: Record<ModoVM, string> = {
     'fastvm': '$(zap)',
     'vm': '$(vm)',
     'jit': '$(rocket)',
 };
 
-type TaskName =
+/** Identificadores internos de las tareas que puede ejecutar la extensión. */
+type NombreTarea =
     | 'run' | 'run-fast' | 'run-jit' | 'run-aot'
     | 'debug' | 'gui'
     | 'build' | 'build-asm' | 'build-wasm' | 'build-android'
@@ -105,126 +136,167 @@ type TaskName =
     | 'gui-hot-reload';
 
 // ======================================================================
-// State
+// Estado
 // ======================================================================
 
-let lspClient: any;
-let outputChannel: OutputChannel;
-let forjaTerminal: Terminal | undefined;
-let statusBarVM: StatusBarItem;
-let statusBarTarget: StatusBarItem;
-let currentVMMode: VMMode = 'fastvm';
-let currentTarget: TargetPlatform = 'native';
+/** Cliente del protocolo de servidor de lenguaje (`vscode-languageclient`). */
+let clienteLsp: any;
+
+/** Canal de salida compartido por toda la extensión. */
+let canalSalida: OutputChannel;
+
+/** Terminal integrada reutilizable; `undefined` cuando no existe todavía. */
+let terminalForja: Terminal | undefined;
+
+/** Indicador de la barra de estado con el modo de VM activo. */
+let barraEstadoVM: StatusBarItem;
+
+/** Indicador de la barra de estado con la plataforma objetivo activa. */
+let barraEstadoObjetivo: StatusBarItem;
+
+/** Modo de VM seleccionado actualmente. */
+let modoVMActual: ModoVM = 'fastvm';
+
+/** Plataforma objetivo seleccionada actualmente. */
+let objetivoActual: PlataformaObjetivo = 'native';
 
 // ======================================================================
-// Activation
+// Ciclo de vida de la extensión
 // ======================================================================
 
-export function activate(context: ExtensionContext) {
-    outputChannel = window.createOutputChannel(OUTPUT_CHANNEL_NAME, 'forja');
-    outputChannel.appendLine('Forja Extension v0.4.0 activada');
+/**
+ * Activa la extensión.
+ *
+ * Es el punto de entrada que invoca VS Code. Crea el canal de salida, carga
+ * la configuración del usuario, monta el resaltado sintáctico, el cliente LSP,
+ * la barra de estado, todos los comandos, el proveedor de tareas, el adaptador
+ * de depuración y el panel de diagramas.
+ *
+ * @param contexto Contexto de la extensión que aporta VS Code (suscripciones y rutas).
+ * @returns Nada; los recursos se liberan en `deactivate`.
+ */
+export function activate(contexto: ExtensionContext) {
+    canalSalida = window.createOutputChannel(NOMBRE_CANAL_SALIDA, 'forja');
+    canalSalida.appendLine('Extensión Forja activada');
 
-    // ── Load settings ──
-    currentVMMode = workspace.getConfiguration('forja').get<VMMode>('defaultVM', 'fastvm');
-    currentTarget = workspace.getConfiguration('forja').get<TargetPlatform>('defaultTarget', 'native');
-    hotReloadEnabled = workspace.getConfiguration('forja').get<boolean>('hotReload.enabled', true);
+    // ── Carga de la configuración del usuario ──
+    modoVMActual = workspace.getConfiguration('forja').get<ModoVM>('defaultVM', 'fastvm');
+    objetivoActual = workspace.getConfiguration('forja').get<PlataformaObjetivo>('defaultTarget', 'native');
+    recargaCalienteActiva = workspace.getConfiguration('forja').get<boolean>('hotReload.enabled', true);
 
-    // ── Apply Forja syntax colors ──
-    setupForjaHighlighter(context);
+    // ── Resaltado sintáctico propio ──
+    configurarResaltadoForja(contexto);
 
-    // ── LSP Client ──
-    startLSPClient(context);
+    // ── Cliente LSP ──
+    iniciarClienteLsp(contexto);
 
-    // ── Status Bar ──
-    statusBarVM = window.createStatusBarItem(StatusBarAlignment.Left, 100);
-    statusBarVM.command = 'forja.selectVM';
-    statusBarVM.tooltip = 'Haz clic para cambiar la VM por defecto';
-    context.subscriptions.push(statusBarVM);
+    // ── Barra de estado: selector de VM ──
+    barraEstadoVM = window.createStatusBarItem(StatusBarAlignment.Left, 100);
+    barraEstadoVM.command = 'forja.selectVM';
+    barraEstadoVM.tooltip = 'Haz clic para cambiar la VM por defecto';
+    contexto.subscriptions.push(barraEstadoVM);
 
-    statusBarTarget = window.createStatusBarItem(StatusBarAlignment.Left, 99);
-    statusBarTarget.command = 'forja.selectTarget';
-    statusBarTarget.tooltip = 'Haz clic para cambiar la plataforma target';
-    context.subscriptions.push(statusBarTarget);
+    // ── Barra de estado: selector de plataforma objetivo ──
+    barraEstadoObjetivo = window.createStatusBarItem(StatusBarAlignment.Left, 99);
+    barraEstadoObjetivo.command = 'forja.selectTarget';
+    barraEstadoObjetivo.tooltip = 'Haz clic para cambiar la plataforma target';
+    contexto.subscriptions.push(barraEstadoObjetivo);
 
-    // ── Register All Commands ──
-    registerCommands(context);
+    // ── Registro de todos los comandos ──
+    registrarComandos(contexto);
 
-    // ── Task Provider ──
-    context.subscriptions.push(
-        tasks.registerTaskProvider('forja', new ForjaTaskProvider())
+    // ── Proveedor de tareas ──
+    contexto.subscriptions.push(
+        tasks.registerTaskProvider('forja', new ProveedorTareasForja())
     );
 
-    // ── Debug Adapter ──
-    context.subscriptions.push(
-        debug.registerDebugAdapterDescriptorFactory('forja', new ForjaDebugAdapterDescriptorFactory(context))
+    // ── Adaptador de depuración (DAP) ──
+    contexto.subscriptions.push(
+        debug.registerDebugAdapterDescriptorFactory('forja', new FabricaDescriptoresDepuracionForja(contexto))
     );
-    context.subscriptions.push(
-        debug.registerDebugConfigurationProvider('forja', new ForjaDebugConfigurationProvider())
-    );
-
-    // ── Webview Providers (Fase 4) ──
-    const diagramProvider = new ForjaDiagramProvider(context.extensionUri);
-    context.subscriptions.push(
-        window.registerWebviewViewProvider(ForjaDiagramProvider.viewType, diagramProvider)
+    contexto.subscriptions.push(
+        debug.registerDebugConfigurationProvider('forja', new ProveedorConfiguracionDepuracionForja())
     );
 
-    // Refresh diagram on active editor change
-    context.subscriptions.push(
+    // ── Panel webview del diagrama ──
+    const proveedorDiagrama = new ProveedorDiagramaForja(contexto.extensionUri);
+    contexto.subscriptions.push(
+        window.registerWebviewViewProvider(ProveedorDiagramaForja.tipoVista, proveedorDiagrama)
+    );
+
+    // Refrescar el diagrama al cambiar de editor.
+    contexto.subscriptions.push(
         window.onDidChangeActiveTextEditor(() => {
-            updateToolbarVisibility();
-            diagramProvider.updateActiveDiagram();
+            actualizarVisibilidadBarraHerramientas();
+            proveedorDiagrama.actualizarDiagramaActivo();
         })
     );
 
-    // ── Hot Reload Status Bar ──
-    hotReloadStatus = window.createStatusBarItem(StatusBarAlignment.Left, 98);
-    hotReloadStatus.command = 'forja.toggleHotReload';
-    hotReloadStatus.tooltip = 'Haz clic para activar/desactivar Hot Reload';
-    context.subscriptions.push(hotReloadStatus);
+    // ── Barra de estado: indicador de recarga en caliente ──
+    estadoRecargaCaliente = window.createStatusBarItem(StatusBarAlignment.Left, 98);
+    estadoRecargaCaliente.command = 'forja.toggleHotReload';
+    estadoRecargaCaliente.tooltip = 'Haz clic para activar/desactivar Hot Reload';
+    contexto.subscriptions.push(estadoRecargaCaliente);
 
-    // ── Hot Reload on Save ──
-    context.subscriptions.push(
-        workspace.onDidSaveTextDocument(async (doc) => {
-            if (doc.languageId === 'forja') {
-                diagramProvider.updateActiveDiagram();
+    // ── Recarga en caliente al guardar un archivo ──
+    contexto.subscriptions.push(
+        workspace.onDidSaveTextDocument(async (documento) => {
+            if (documento.languageId === 'forja') {
+                proveedorDiagrama.actualizarDiagramaActivo();
             }
-            if (!hotReloadEnabled) return;
-            if (doc.languageId !== 'forja') return;
+            if (!recargaCalienteActiva) return;
+            if (documento.languageId !== 'forja') return;
 
-            const filePath = doc.fileName;
-            outputChannel.appendLine(`Archivo guardado: ${filePath}`);
+            const rutaArchivo = documento.fileName;
+            canalSalida.appendLine(`Archivo guardado: ${rutaArchivo}`);
 
-            const running = runningProcesses.get(filePath);
-            if (running) {
-                outputChannel.appendLine(`Hot Reload: ${running.mode} → ${filePath}`);
-                await killProcess(filePath);
-                startProcess(filePath, running.mode);
+            const procesoVivo = procesosEnEjecucion.get(rutaArchivo);
+            if (procesoVivo) {
+                canalSalida.appendLine(`Hot Reload: ${procesoVivo.modo} → ${rutaArchivo}`);
+                await matarProceso(rutaArchivo);
+                iniciarProceso(rutaArchivo, procesoVivo.modo);
             }
         })
     );
 
-    // ── Create Toolbar Status Bar Items ──
-    for (const item of toolbarItems) {
-        const sbi = window.createStatusBarItem(StatusBarAlignment.Left, item.priority);
-        sbi.text = item.text;
-        sbi.command = item.command;
-        sbi.tooltip = item.tooltip;
-        item.statusBarItem = sbi;
-        context.subscriptions.push(sbi);
+    // ── Creación de los elementos de la barra de herramientas ──
+    for (const elemento of elementosBarraHerramientas) {
+        const itemBarra = window.createStatusBarItem(StatusBarAlignment.Left, elemento.prioridad);
+        itemBarra.text = elemento.texto;
+        itemBarra.command = elemento.comando;
+        itemBarra.tooltip = elemento.ayuda;
+        elemento.elementoBarraEstado = itemBarra;
+        contexto.subscriptions.push(itemBarra);
     }
 
-    // ── Initial status bar update ──
-    updateStatusBar();
-    updateToolbarVisibility();
+    // ── Primera actualización de la interfaz ──
+    actualizarBarraEstado();
+    actualizarVisibilidadBarraHerramientas();
 
-    outputChannel.appendLine('Forja Extension lista - todos los comandos registrados');
+    canalSalida.appendLine('Extensión Forja lista: todos los comandos registrados');
+}
+
+/**
+ * Desactiva la extensión.
+ *
+ * Detiene el cliente LSP si estaba activo. VS Code llama a esta función al
+ * cerrarse la ventana o al desinstalar la extensión.
+ *
+ * @returns Promesa que se resuelve cuando el servidor de lenguaje terminó.
+ */
+export function deactivate(): Thenable<void> | undefined {
+    if (clienteLsp) {
+        return clienteLsp.stop();
+    }
+    return undefined;
 }
 
 // ======================================================================
-// Manual Syntax Highlighter via TextEditorDecorationType
+// Resaltado sintáctico manual (TextEditorDecorationType)
 // ======================================================================
 
-const FORJA_KEYWORDS = [
+/** Palabras clave del lenguaje reconocidas por el resaltador. */
+const PALABRAS_CLAVE = [
     'importar', 'mut', 'si', 'sino', 'o',
     'mientras', 'para', 'repetir', 'funcion', 'fun', 'retornar', 'clase',
     'constructor', 'nuevo', 'prestado', 'tipo', 'coincidir', 'caso', 'BD',
@@ -233,11 +305,17 @@ const FORJA_KEYWORDS = [
     'requiere', 'asegura', 'siempre', 'resultado', 'anterior', 'continuar',
 ];
 
-const FORJA_DECLARATIONS = ['variable', 'var', 'constante', 'const'];
+/** Palabras que introducen una declaración de variable o constante. */
+const DECLARACIONES = ['variable', 'var', 'constante', 'const'];
 
-const FORJA_TYPES = ['Entero', 'Decimal', 'Texto', 'Booleano', 'Nulo', 'Exacto'];
-const FORJA_LITERALS = ['verdadero', 'falso', 'nulo'];
-const FORJA_BUILTINS = [
+/** Nombres de tipo primitivos del lenguaje. */
+const TIPOS = ['Entero', 'Decimal', 'Texto', 'Booleano', 'Nulo', 'Exacto'];
+
+/** Literales booleanos y nulo. */
+const LITERALES = ['verdadero', 'falso', 'nulo'];
+
+/** Funciones incorporadas de la biblioteca estándar. */
+const INCORPORADAS = [
     'escribir', 'leer', 'asegurar', 'longitud', 'aleatorio', 'redondear',
     'potencia', 'raiz', 'maximo', 'minimo', 'concatenar', 'insertar',
     'eliminar', 'contiene', 'claves', 'valores', 'a_caracter', 'a_texto',
@@ -249,13 +327,30 @@ const FORJA_BUILTINS = [
     'pedir_texto', 'imprimir', 'mayuscula',
 ];
 
-interface DecoType { type: TextEditorDecorationType; ranges: Range[]; }
-let decoTypes: Record<string, DecoType> = {};
+/** Tipo de resaltado: el tipo de decoración más los rangos acumulados en un pase. */
+interface TipoDecoracion {
+    /** Tipo de decoración registrado en VS Code. */
+    tipo: TextEditorDecorationType;
+    /** Rangos que se pintarán en la próxima aplicación. */
+    rangos: Range[];
+}
 
-function getDecoTypes(context: ExtensionContext): Record<string, DecoType> {
-    if (Object.keys(decoTypes).length > 0) return decoTypes;
+/** Caché de tipos de decoración, indexada por categoría léxica (`keyword`, `string`, …). */
+let tiposDecoracion: Record<string, TipoDecoracion> = {};
 
-    const defs: Record<string, string> = {
+/**
+ * Crea (una sola vez) los tipos de decoración del resaltador.
+ *
+ * Cada categoría léxica se asocia a un color fijo. La función es idempotente:
+ * si los tipos ya existen devuelve la caché sin volver a crearlos.
+ *
+ * @param contexto Contexto de la extensión donde se registran los tipos para su liberación.
+ * @returns Mapa de categoría léxica a su tipo de decoración.
+ */
+function obtenerTiposDecoracion(contexto: ExtensionContext): Record<string, TipoDecoracion> {
+    if (Object.keys(tiposDecoracion).length > 0) return tiposDecoracion;
+
+    const colores: Record<string, string> = {
         comment: '#8B8B8B',
         string: '#6AAB73',
         char: '#6AAB73',
@@ -274,392 +369,474 @@ function getDecoTypes(context: ExtensionContext): Record<string, DecoType> {
         attribute: '#BBB529',
     };
 
-    for (const [name, color] of Object.entries(defs)) {
-        const t = window.createTextEditorDecorationType({ color });
-        decoTypes[name] = { type: t, ranges: [] };
-        context.subscriptions.push(t);
+    for (const [categoria, color] of Object.entries(colores)) {
+        const tipo = window.createTextEditorDecorationType({ color });
+        tiposDecoracion[categoria] = { tipo, rangos: [] };
+        contexto.subscriptions.push(tipo);
     }
-    return decoTypes;
+    return tiposDecoracion;
 }
 
-function tokenizeForja(text: string): { name: string; start: number; end: number }[] {
-    const tokens: { name: string; start: number; end: number }[] = [];
-    const len = text.length;
-    let i = 0;
+/**
+ * Analiza léxicamente un texto Forja y devuelve sus fichas con posición.
+ *
+ * Es un lexer simplificado pensado solo para colorear: no valida sintaxis ni
+ * informa errores. Cada ficha indica la categoría léxica y el rango de
+ * caracteres `[inicio, fin)` que ocupa en el texto.
+ *
+ * @param texto Contenido completo del documento Forja.
+ * @returns Lista de fichas en orden de aparición.
+ */
+function tokenizarForja(texto: string): { nombre: string; inicio: number; fin: number }[] {
+    const fichas: { nombre: string; inicio: number; fin: number }[] = [];
+    const longitud = texto.length;
+    let indice = 0;
 
-    const isWordChar = (c: string) => /[a-zA-Z0-9_ñ]/.test(c);
-    const kwSet = new Set(FORJA_KEYWORDS);
-    const declSet = new Set(FORJA_DECLARATIONS);
-    const tySet = new Set(FORJA_TYPES);
-    const litSet = new Set(FORJA_LITERALS);
-    const biSet = new Set(FORJA_BUILTINS);
+    const esCaracterDePalabra = (caracter: string) => /[a-zA-Z0-9_ñ]/.test(caracter);
+    const conjuntoClave = new Set(PALABRAS_CLAVE);
+    const conjuntoDeclaracion = new Set(DECLARACIONES);
+    const conjuntoTipo = new Set(TIPOS);
+    const conjuntoLiteral = new Set(LITERALES);
+    const conjuntoIncorporada = new Set(INCORPORADAS);
 
-    while (i < len) {
-        const c = text[i];
+    while (indice < longitud) {
+        const caracter = texto[indice];
 
-        // Comments: #, //, ///, /* */
-        if (c === '@') {
-            let j = i + 1;
-            while (j < len && /[a-zA-Z0-9_]/.test(text[j])) j++;
-            tokens.push({ name: 'attribute', start: i, end: j });
-            i = j;
+        // Atributos: @nombre
+        if (caracter === '@') {
+            let fin = indice + 1;
+            while (fin < longitud && /[a-zA-Z0-9_]/.test(texto[fin])) fin++;
+            fichas.push({ nombre: 'attribute', inicio: indice, fin: fin });
+            indice = fin;
             continue;
         }
 
-        if (c === '#') {
-            let end = text.indexOf('\n', i);
-            if (end === -1) end = len;
-            tokens.push({ name: 'comment', start: i, end });
-            i = end;
+        // Comentario de línea con almohadilla: # ...
+        if (caracter === '#') {
+            let fin = texto.indexOf('\n', indice);
+            if (fin === -1) fin = longitud;
+            fichas.push({ nombre: 'comment', inicio: indice, fin: fin });
+            indice = fin;
             continue;
         }
-        if (c === '/' && text[i + 1] === '/') {
-            let end = text.indexOf('\n', i);
-            if (end === -1) end = len;
-            tokens.push({ name: 'comment', start: i, end });
-            i = end;
+        // Comentario de línea con doble barra: // ...
+        if (caracter === '/' && texto[indice + 1] === '/') {
+            let fin = texto.indexOf('\n', indice);
+            if (fin === -1) fin = longitud;
+            fichas.push({ nombre: 'comment', inicio: indice, fin: fin });
+            indice = fin;
             continue;
         }
-        if (c === '/' && text[i + 1] === '*') {
-            let end = text.indexOf('*/', i + 2);
-            if (end === -1) end = len; else end += 2;
-            tokens.push({ name: 'comment', start: i, end });
-            i = end;
+        // Comentario de bloque: /* ... */
+        if (caracter === '/' && texto[indice + 1] === '*') {
+            let fin = texto.indexOf('*/', indice + 2);
+            if (fin === -1) fin = longitud; else fin += 2;
+            fichas.push({ nombre: 'comment', inicio: indice, fin: fin });
+            indice = fin;
             continue;
         }
 
-        // Strings: "..."
-        if (c === '"') {
-            let j = i + 1;
-            while (j < len) {
-                if (text[j] === '\\' && j + 1 < len) { j += 2; continue; }
-                if (text[j] === '"') { j++; break; }
-                j++;
+        // Cadenas de texto: "..." con escapes
+        if (caracter === '"') {
+            let fin = indice + 1;
+            while (fin < longitud) {
+                if (texto[fin] === '\\' && fin + 1 < longitud) { fin += 2; continue; }
+                if (texto[fin] === '"') { fin++; break; }
+                fin++;
             }
-            tokens.push({ name: 'string', start: i, end: j });
-            i = j;
+            fichas.push({ nombre: 'string', inicio: indice, fin: fin });
+            indice = fin;
             continue;
         }
 
-        // Characters: '...'
-        if (c === "'") {
-            let j = i + 1;
-            while (j < len) {
-                if (text[j] === '\\' && j + 1 < len) { j += 2; continue; }
-                if (text[j] === "'") { j++; break; }
-                j++;
+        // Caracteres sueltos: '...' con escapes
+        if (caracter === "'") {
+            let fin = indice + 1;
+            while (fin < longitud) {
+                if (texto[fin] === '\\' && fin + 1 < longitud) { fin += 2; continue; }
+                if (texto[fin] === "'") { fin++; break; }
+                fin++;
             }
-            tokens.push({ name: 'char', start: i, end: j });
-            i = j;
+            fichas.push({ nombre: 'char', inicio: indice, fin: fin });
+            indice = fin;
             continue;
         }
 
-        // Numbers
-        if (/\d/.test(c)) {
-            let j = i + 1;
-            while (j < len && /[\d.]/.test(text[j])) j++;
-            tokens.push({ name: 'number', start: i, end: j });
-            i = j;
+        // Números: dígitos y puntos decimales
+        if (/\d/.test(caracter)) {
+            let fin = indice + 1;
+            while (fin < longitud && /[\d.]/.test(texto[fin])) fin++;
+            fichas.push({ nombre: 'number', inicio: indice, fin: fin });
+            indice = fin;
             continue;
         }
 
-        // Identifiers / keywords
-        if (isWordChar(c) && /[a-zA-Z_ñ]/.test(c)) {
-            let j = i + 1;
-            while (j < len && isWordChar(text[j])) j++;
-            const word = text.substring(i, j);
+        // Identificadores, palabras clave y nombres de función
+        if (esCaracterDePalabra(caracter) && /[a-zA-Z_ñ]/.test(caracter)) {
+            let fin = indice + 1;
+            while (fin < longitud && esCaracterDePalabra(texto[fin])) fin++;
+            const palabra = texto.substring(indice, fin);
 
-            if (word === 'este') {
-                tokens.push({ name: 'self', start: i, end: j });
-            } else if (declSet.has(word)) {
-                tokens.push({ name: 'declaration', start: i, end: j });
-            } else if (kwSet.has(word)) {
-                tokens.push({ name: 'keyword', start: i, end: j });
-            } else if (litSet.has(word)) {
-                tokens.push({ name: 'boolean', start: i, end: j });
-            } else if (tySet.has(word)) {
-                tokens.push({ name: 'type', start: i, end: j });
-            } else if (biSet.has(word)) {
-                tokens.push({ name: 'builtin', start: i, end: j });
-            } else if (/^[A-Z]/.test(word)) {
-                tokens.push({ name: 'cls', start: i, end: j });
-            } else if (text[j] === '(' || (text[j] === ' ' && text[j + 1] === '(')) {
-                tokens.push({ name: 'fn', start: i, end: j });
+            if (palabra === 'este') {
+                fichas.push({ nombre: 'self', inicio: indice, fin: fin });
+            } else if (conjuntoDeclaracion.has(palabra)) {
+                fichas.push({ nombre: 'declaration', inicio: indice, fin: fin });
+            } else if (conjuntoClave.has(palabra)) {
+                fichas.push({ nombre: 'keyword', inicio: indice, fin: fin });
+            } else if (conjuntoLiteral.has(palabra)) {
+                fichas.push({ nombre: 'boolean', inicio: indice, fin: fin });
+            } else if (conjuntoTipo.has(palabra)) {
+                fichas.push({ nombre: 'type', inicio: indice, fin: fin });
+            } else if (conjuntoIncorporada.has(palabra)) {
+                fichas.push({ nombre: 'builtin', inicio: indice, fin: fin });
+            } else if (/^[A-Z]/.test(palabra)) {
+                fichas.push({ nombre: 'cls', inicio: indice, fin: fin });
+            } else if (texto[fin] === '(' || (texto[fin] === ' ' && texto[fin + 1] === '(')) {
+                fichas.push({ nombre: 'fn', inicio: indice, fin: fin });
             } else {
-                tokens.push({ name: 'variable', start: i, end: j });
+                fichas.push({ nombre: 'variable', inicio: indice, fin: fin });
             }
-            i = j;
+            indice = fin;
             continue;
         }
 
-        // Operators
-        if (/[+\-*/%=<>!&|]/.test(c)) {
-            let j = i;
-            if (text[j] === '-' && text[j + 1] === '>') j += 2;
-            else if (text[j] === ':' && text[j + 1] === ':') j += 2;
-            else if (text[j] === '.' && text[j + 1] === '.' && text[j + 2] === '.') j += 3;
-            else if ((c === '=' || c === '!' || c === '>' || c === '<' || c === '+' || c === '-' || c === '*' || c === '/' || c === '%' || c === '&' || c === '|') && text[j + 1] === '=') j += 2;
-            else if (c === '|' && text[j + 1] === '|') j += 2;
-            else if (c === '&' && text[j + 1] === '&') j += 2;
-            else if (c === '+' && text[j + 1] === '+') j += 2;
-            else if (c === '-' && text[j + 1] === '-') j += 2;
-            else j += 1;
-            tokens.push({ name: 'operator', start: i, end: j });
-            i = j;
+        // Operadores aritméticos, lógicos y de comparación
+        if (/[+\-*/%=<>!&|]/.test(caracter)) {
+            let fin = indice;
+            // Nota: los casos de ':' y '.' son inalcanzables porque el filtro de
+            // entrada no los incluye; se conservan para no alterar el comportamiento.
+            if (texto[fin] === '-' && texto[fin + 1] === '>') fin += 2;
+            else if (texto[fin] === ':' && texto[fin + 1] === ':') fin += 2;
+            else if (texto[fin] === '.' && texto[fin + 1] === '.' && texto[fin + 2] === '.') fin += 3;
+            else if ((caracter === '=' || caracter === '!' || caracter === '>' || caracter === '<' || caracter === '+' || caracter === '-' || caracter === '*' || caracter === '/' || caracter === '%' || caracter === '&' || caracter === '|') && texto[fin + 1] === '=') fin += 2;
+            else if (caracter === '|' && texto[fin + 1] === '|') fin += 2;
+            else if (caracter === '&' && texto[fin + 1] === '&') fin += 2;
+            else if (caracter === '+' && texto[fin + 1] === '+') fin += 2;
+            else if (caracter === '-' && texto[fin + 1] === '-') fin += 2;
+            else fin += 1;
+            fichas.push({ nombre: 'operator', inicio: indice, fin: fin });
+            indice = fin;
             continue;
         }
 
-        // Punctuation
-        if (/[{}()\[\];:,.@?]/.test(c)) {
-            tokens.push({ name: 'punctuation', start: i, end: i + 1 });
-            i++;
+        // Signos de puntuación de un solo carácter
+        if (/[{}()\[\];:,.@?]/.test(caracter)) {
+            fichas.push({ nombre: 'punctuation', inicio: indice, fin: indice + 1 });
+            indice++;
             continue;
         }
 
-        i++;
+        // Cualquier otro carácter se ignora.
+        indice++;
     }
 
-    return tokens;
+    return fichas;
 }
 
-function applyForjaDecorations(editor: TextEditor) {
+/**
+ * Aplica el resaltado a un editor Forja.
+ *
+ * Reinicia los rangos acumulados, tokeniza el documento activo y vuelca los
+ * rangos resultantes en cada tipo de decoración. Solo actúa si el documento
+ * pertenece al lenguaje `forja`.
+ *
+ * @param editor Editor de texto sobre el que se pintan las decoraciones.
+ * @returns Nada.
+ */
+function aplicarDecoracionesForja(editor: TextEditor) {
     if (editor.document.languageId !== 'forja') return;
-    const dt = getDecorations();
+    const decoraciones = obtenerDecoraciones();
 
-    for (const key of Object.keys(dt)) dt[key].ranges = [];
+    for (const categoria of Object.keys(decoraciones)) decoraciones[categoria].rangos = [];
 
-    const text = editor.document.getText();
-    const tokens = tokenizeForja(text);
+    const texto = editor.document.getText();
+    const fichas = tokenizarForja(texto);
 
-    for (const tok of tokens) {
-        const d = dt[tok.name];
-        if (!d) continue;
-        const startPos = editor.document.positionAt(tok.start);
-        const endPos = editor.document.positionAt(tok.end);
-        d.ranges.push(new Range(startPos, endPos));
+    for (const ficha of fichas) {
+        const decoracion = decoraciones[ficha.nombre];
+        if (!decoracion) continue;
+        const posicionInicio = editor.document.positionAt(ficha.inicio);
+        const posicionFin = editor.document.positionAt(ficha.fin);
+        decoracion.rangos.push(new Range(posicionInicio, posicionFin));
     }
 
-    for (const key of Object.keys(dt)) {
-        editor.setDecorations(dt[key].type, dt[key].ranges);
-    }
-}
-
-function clearForjaDecorations(editor: TextEditor) {
-    const dt = decoTypes;
-    for (const key of Object.keys(dt)) {
-        editor.setDecorations(dt[key].type, []);
+    for (const categoria of Object.keys(decoraciones)) {
+        editor.setDecorations(decoraciones[categoria].tipo, decoraciones[categoria].rangos);
     }
 }
 
-function getDecorations(): Record<string, DecoType> {
-    return decoTypes;
+/**
+ * Quita todas las decoraciones del resaltador de un editor.
+ *
+ * @param editor Editor del que se retiran las decoraciones.
+ * @returns Nada.
+ */
+function limpiarDecoracionesForja(editor: TextEditor) {
+    const decoraciones = tiposDecoracion;
+    for (const categoria of Object.keys(decoraciones)) {
+        editor.setDecorations(decoraciones[categoria].tipo, []);
+    }
 }
 
-function setupForjaHighlighter(context: ExtensionContext) {
-    getDecoTypes(context);
+/**
+ * Devuelve la caché de tipos de decoración del resaltador.
+ *
+ * @returns Mapa de categoría léxica a su tipo de decoración.
+ */
+function obtenerDecoraciones(): Record<string, TipoDecoracion> {
+    return tiposDecoracion;
+}
 
-    // Apply on open
+/**
+ * Instala el resaltador sintáctico propio.
+ *
+ * Crea los tipos de decoración, pinta el editor activo y se suscribe a los
+ * eventos de cambio de editor y de cambio de texto (con retardo de 100 ms para
+ * no tokenizar en cada pulsación).
+ *
+ * @param contexto Contexto de la extensión donde se registran las suscripciones.
+ * @returns Nada.
+ */
+function configurarResaltadoForja(contexto: ExtensionContext) {
+    obtenerTiposDecoracion(contexto);
+
+    // Pintar el editor que ya esté abierto al activarse.
     if (window.activeTextEditor) {
-        applyForjaDecorations(window.activeTextEditor);
+        aplicarDecoracionesForja(window.activeTextEditor);
     }
 
-    // Apply on editor switch
-    context.subscriptions.push(
+    // Repintar al cambiar de editor.
+    contexto.subscriptions.push(
         window.onDidChangeActiveTextEditor((editor) => {
             if (editor) {
                 if (editor.document.languageId === 'forja') {
-                    applyForjaDecorations(editor);
+                    aplicarDecoracionesForja(editor);
                 } else {
-                    clearForjaDecorations(editor);
+                    limpiarDecoracionesForja(editor);
                 }
             }
         })
     );
 
-    // Apply on text change (debounced)
-    let debounceTimer: NodeJS.Timeout | undefined;
-    context.subscriptions.push(
-        workspace.onDidChangeTextDocument((event) => {
+    // Repintar al modificar el texto (con retardo para agrupar pulsaciones).
+    let temporizadorEspera: NodeJS.Timeout | undefined;
+    contexto.subscriptions.push(
+        workspace.onDidChangeTextDocument((evento) => {
             const editor = window.activeTextEditor;
-            if (!editor || editor.document !== event.document) return;
+            if (!editor || editor.document !== evento.document) return;
             if (editor.document.languageId !== 'forja') return;
-            if (debounceTimer) clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => applyForjaDecorations(editor), 100);
+            if (temporizadorEspera) clearTimeout(temporizadorEspera);
+            temporizadorEspera = setTimeout(() => aplicarDecoracionesForja(editor), 100);
         })
     );
 }
 
-export function deactivate(): Thenable<void> | undefined {
-    if (lspClient) {
-        return lspClient.stop();
-    }
-    return undefined;
-}
-
 // ======================================================================
-// LSP Client
+// Cliente LSP
 // ======================================================================
 
-function startLSPClient(context: ExtensionContext) {
-    const configLspEnabled = workspace.getConfiguration('forja').get<boolean>('lsp.enabled', true);
-    if (!configLspEnabled) {
-        outputChannel.appendLine('LSP deshabilitado por configuración');
+/**
+ * Arranca el cliente del servidor de lenguaje (`forja-lsp`).
+ *
+ * Respeta la configuración `forja.lsp.enabled` y `forja.lsp.path`. Si no hay
+ * ruta configurada busca el binario en `target/debug`, luego en
+ * `target/release` y por último en el `PATH`. Si no lo encuentra, deja la
+ * extensión funcionando solo con el resaltador propio.
+ *
+ * @param contexto Contexto de la extensión usado para resolver rutas relativas.
+ * @returns Nada.
+ */
+function iniciarClienteLsp(contexto: ExtensionContext) {
+    const lspHabilitado = workspace.getConfiguration('forja').get<boolean>('lsp.enabled', true);
+    if (!lspHabilitado) {
+        canalSalida.appendLine('LSP deshabilitado por configuración');
         return;
     }
 
-    let LanguageClient: any, TransportKind: any;
+    let ClienteLenguaje: any, TipoTransporte: any;
+
     try {
         const lsp = require('vscode-languageclient/node');
-        LanguageClient = lsp.LanguageClient;
-        TransportKind = lsp.TransportKind;
+        ClienteLenguaje = lsp.LanguageClient;
+        TipoTransporte = lsp.TransportKind;
     } catch {
-        outputChannel.appendLine('vscode-languageclient no disponible — LSP deshabilitado, highlighter sigue activo');
+        canalSalida.appendLine('vscode-languageclient no disponible — LSP deshabilitado, el resaltador sigue activo');
         return;
     }
 
-    // Determine server path: config override or auto-detect
-    let serverPath = workspace.getConfiguration('forja').get<string>('lsp.path', '');
-    if (!serverPath) {
-        // Try project-relative binary first, then PATH
-        const relPath = context.asAbsolutePath(path.join('..', 'target', 'debug', 'forja-lsp.exe'));
-        if (fs.existsSync(relPath)) {
-            serverPath = relPath;
+    // Resolución de la ruta del servidor: configuración explícita o autodetección.
+    let rutaServidor = workspace.getConfiguration('forja').get<string>('lsp.path', '');
+    if (!rutaServidor) {
+        // Primero el binario de desarrollo del proyecto.
+        const rutaRelativa = contexto.asAbsolutePath(path.join('..', 'target', 'debug', 'forja-lsp.exe'));
+        if (fs.existsSync(rutaRelativa)) {
+            rutaServidor = rutaRelativa;
         } else {
-            // Check release build
-            const relReleasePath = context.asAbsolutePath(path.join('..', 'target', 'release', 'forja-lsp.exe'));
-            if (fs.existsSync(relReleasePath)) {
-                serverPath = relReleasePath;
+            // Después el binario de release.
+            const rutaRelativaRelease = contexto.asAbsolutePath(path.join('..', 'target', 'release', 'forja-lsp.exe'));
+            if (fs.existsSync(rutaRelativaRelease)) {
+                rutaServidor = rutaRelativaRelease;
             } else {
-                // Try on PATH
-                const whichResult = findOnPath('forja-lsp');
-                if (whichResult) {
-                    serverPath = whichResult;
+                // Por último, el PATH del sistema.
+                const resultadoBusqueda = buscarEnRuta('forja-lsp');
+                if (resultadoBusqueda) {
+                    rutaServidor = resultadoBusqueda;
                 } else {
-                    outputChannel.appendLine('forja-lsp no encontrado. LSP deshabilitado.');
+                    canalSalida.appendLine('forja-lsp no encontrado. LSP deshabilitado.');
                     return;
                 }
             }
         }
     }
 
-    const serverOptions = {
-        run: { command: serverPath, transport: TransportKind.stdio },
-        debug: { command: serverPath, transport: TransportKind.stdio },
+    const opcionesServidor = {
+        run: { command: rutaServidor, transport: TipoTransporte.stdio },
+        debug: { command: rutaServidor, transport: TipoTransporte.stdio },
     };
 
-    const clientOptions = {
+    const opcionesCliente = {
         documentSelector: [{ scheme: 'file', language: 'forja' }],
         synchronize: {
             fileEvents: workspace.createFileSystemWatcher('**/*.fa'),
         },
-        outputChannel: outputChannel,
-        traceOutputChannel: outputChannel,
+        outputChannel: canalSalida,
+        traceOutputChannel: canalSalida,
     };
 
-    lspClient = new LanguageClient('forja-lsp', 'Forja Language Server', serverOptions, clientOptions);
-    lspClient.start();
-    outputChannel.appendLine(`LSP client started: ${serverPath}`);
+    clienteLsp = new ClienteLenguaje('forja-lsp', 'Forja Language Server', opcionesServidor, opcionesCliente);
+    clienteLsp.start();
+    canalSalida.appendLine(`Cliente LSP iniciado: ${rutaServidor}`);
 }
 
 // ======================================================================
-// Status Bar
+// Barra de estado y barra de herramientas
 // ======================================================================
 
-// ======================================================================
-// Status Bar Toolbar (Android Studio / Flutter style)
-// ======================================================================
-
-interface ToolbarItem {
+/** Elemento configurable de la barra de herramientas inferior. */
+interface ElementoBarraHerramientas {
+    /** Identificador interno del elemento. */
     id: string;
-    text: string;
-    command: string;
-    tooltip: string;
-    priority: number;
-    statusBarItem?: StatusBarItem;
+    /** Texto visible (admite codicons). */
+    texto: string;
+    /** Comando de VS Code que se dispara al pulsarlo. */
+    comando: string;
+    /** Texto de ayuda emergente. */
+    ayuda: string;
+    /** Prioridad de ordenación; mayor valor aparece más a la izquierda. */
+    prioridad: number;
+    /** Elemento real de la barra de estado, asignado durante la activación. */
+    elementoBarraEstado?: StatusBarItem;
 }
 
-let toolbarItems: ToolbarItem[] = [
-    { id: 'runFast', text: '$(zap) Ejecutar', command: 'forja.runFast', tooltip: 'Ejecutar con FastVM', priority: 105 },
-    { id: 'runDebug', text: '$(bug) Debug', command: 'forja.runDebug', tooltip: 'Iniciar depuración (DAP)', priority: 104 },
-    { id: 'hotReload', text: '$(sync) Reload', command: 'forja.hotReload', tooltip: 'Recarga en caliente (Hot Reload)', priority: 103 },
-    { id: 'hotRestart', text: '$(refresh) Restart', command: 'forja.hotRestart', tooltip: 'Reinicio en caliente (Hot Restart)', priority: 102 },
-    { id: 'runAOT', text: '$(tools) AOT', command: 'forja.runAOT', tooltip: 'Compilar AOT y ejecutar', priority: 101 },
-    { id: 'buildAndroid', text: '$(device-mobile) Android', command: 'forja.buildAndroid', tooltip: 'Compilar para Android', priority: 100 },
+/** Elementos de la barra de herramientas; se completan durante la activación. */
+let elementosBarraHerramientas: ElementoBarraHerramientas[] = [
+    { id: 'runFast', texto: '$(zap) Ejecutar', comando: 'forja.runFast', ayuda: 'Ejecutar con FastVM', prioridad: 105 },
+    { id: 'runDebug', texto: '$(bug) Debug', comando: 'forja.runDebug', ayuda: 'Iniciar depuración (DAP)', prioridad: 104 },
+    { id: 'hotReload', texto: '$(sync) Reload', comando: 'forja.hotReload', ayuda: 'Recarga en caliente (Hot Reload)', prioridad: 103 },
+    { id: 'hotRestart', texto: '$(refresh) Restart', comando: 'forja.hotRestart', ayuda: 'Reinicio en caliente (Hot Restart)', prioridad: 102 },
+    { id: 'runAOT', texto: '$(tools) AOT', comando: 'forja.runAOT', ayuda: 'Compilar AOT y ejecutar', prioridad: 101 },
+    { id: 'buildAndroid', texto: '$(device-mobile) Android', comando: 'forja.buildAndroid', ayuda: 'Compilar para Android', prioridad: 100 },
 ];
 
-function updateToolbarVisibility() {
+/**
+ * Muestra u oculta los elementos de la barra de herramientas.
+ *
+ * La barra solo aparece cuando el editor activo contiene un archivo Forja.
+ *
+ * @returns Nada.
+ */
+function actualizarVisibilidadBarraHerramientas() {
     const editor = window.activeTextEditor;
-    const isForja = editor && editor.document.languageId === 'forja';
+    const esForja = editor && editor.document.languageId === 'forja';
 
-    for (const item of toolbarItems) {
-        if (item.statusBarItem) {
-            if (isForja) {
-                item.statusBarItem.show();
+    for (const elemento of elementosBarraHerramientas) {
+        if (elemento.elementoBarraEstado) {
+            if (esForja) {
+                elemento.elementoBarraEstado.show();
             } else {
-                item.statusBarItem.hide();
+                elemento.elementoBarraEstado.hide();
             }
         }
     }
 }
 
-function updateStatusBar() {
-    statusBarVM.text = `${VM_ICONS[currentVMMode]} ${VM_LABELS[currentVMMode]}`;
-    statusBarVM.show();
+/**
+ * Refresca la barra de estado completa.
+ *
+ * Actualiza el modo de VM, la plataforma objetivo y el indicador de recarga
+ * en caliente.
+ *
+ * @returns Nada.
+ */
+function actualizarBarraEstado() {
+    barraEstadoVM.text = `${ICONOS_VM[modoVMActual]} ${ETIQUETAS_VM[modoVMActual]}`;
+    barraEstadoVM.show();
 
-    const targetLabel = currentTarget === 'native' ? 'Nativo'
-        : currentTarget === 'wasm32-unknown-unknown' ? 'WASM'
-            : currentTarget.includes('android') ? 'Android'
-                : currentTarget;
-    statusBarTarget.text = `$(target) ${targetLabel}`;
-    statusBarTarget.show();
+    const etiquetaObjetivo = objetivoActual === 'native' ? 'Nativo'
+        : objetivoActual === 'wasm32-unknown-unknown' ? 'WASM'
+            : objetivoActual.includes('android') ? 'Android'
+                : objetivoActual;
+    barraEstadoObjetivo.text = `$(target) ${etiquetaObjetivo}`;
+    barraEstadoObjetivo.show();
 
-    // Update hot reload indicator
-    if (hotReloadStatus) {
-        const count = runningProcesses.size;
-        if (!hotReloadEnabled) {
-            hotReloadStatus.text = '$(circle-slash) HR off';
-        } else if (count > 0) {
-            hotReloadStatus.text = `$(sync) HR ${count}`;
+    // Indicador de recarga en caliente: apagado, procesos vivos o en espera.
+    if (estadoRecargaCaliente) {
+        const cantidad = procesosEnEjecucion.size;
+        if (!recargaCalienteActiva) {
+            estadoRecargaCaliente.text = '$(circle-slash) HR off';
+        } else if (cantidad > 0) {
+            estadoRecargaCaliente.text = `$(sync) HR ${cantidad}`;
         } else {
-            hotReloadStatus.text = '$(circle-outline) HR';
+            estadoRecargaCaliente.text = '$(circle-outline) HR';
         }
-        hotReloadStatus.show();
+        estadoRecargaCaliente.show();
     }
 }
 
 // ======================================================================
-// Commands
+// Registro de comandos
 // ======================================================================
 
-function registerCommands(context: ExtensionContext) {
-    // ── Execution Commands ──
+/**
+ * Registra todos los comandos que aporta la extensión.
+ *
+ * Agrupa ejecución, compilación, cross-compilación a Android, pruebas,
+ * herramientas, recarga en caliente, creación de proyectos y selectores de
+ * VM/plataforma. Cada comando se añade a las suscripciones para liberarlo al
+ * desactivar la extensión.
+ *
+ * @param contexto Contexto de la extensión donde se registran los comandos.
+ * @returns Nada.
+ */
+function registrarComandos(contexto: ExtensionContext) {
+    // ── Comandos de ejecución ──
 
-    // Run original VM
-    const cmdRun = commands.registerCommand('forja.run', () => {
-        executeCommand('run', ['run']);
+    // Ejecutar con la VM original.
+    const comandoEjecutar = commands.registerCommand('forja.run', () => {
+        ejecutarOrden('run', ['run']);
     });
-    context.subscriptions.push(cmdRun);
+    contexto.subscriptions.push(comandoEjecutar);
 
-    // Run FastVM
-    const cmdRunFast = commands.registerCommand('forja.runFast', () => {
-        executeCommand('run', ['run', '--fast']);
+    // Ejecutar con FastVM.
+    const comandoEjecutarRapido = commands.registerCommand('forja.runFast', () => {
+        ejecutarOrden('run', ['run', '--fast']);
     });
-    context.subscriptions.push(cmdRunFast);
+    contexto.subscriptions.push(comandoEjecutarRapido);
 
-    // Run JIT
-    const cmdRunJIT = commands.registerCommand('forja.runJIT', () => {
-        executeCommand('run', ['run', '--jit']);
+    // Ejecutar con JIT.
+    const comandoEjecutarJit = commands.registerCommand('forja.runJIT', () => {
+        ejecutarOrden('run', ['run', '--jit']);
     });
-    context.subscriptions.push(cmdRunJIT);
+    contexto.subscriptions.push(comandoEjecutarJit);
 
-    // Run AOT (LLVM)
-    const cmdRunAOT = commands.registerCommand('forja.runAOT', () => {
-        executeCommand('run', ['run', '--aot']);
+    // Ejecutar con AOT (LLVM).
+    const comandoEjecutarAot = commands.registerCommand('forja.runAOT', () => {
+        ejecutarOrden('run', ['run', '--aot']);
     });
-    context.subscriptions.push(cmdRunAOT);
+    contexto.subscriptions.push(comandoEjecutarAot);
 
-    // Run Debug — ahora usa DAP en vez de terminal
-    const cmdRunDebug = commands.registerCommand('forja.runDebug', () => {
+    // Depurar el archivo activo mediante DAP (no por terminal).
+    const comandoDepurar = commands.registerCommand('forja.runDebug', () => {
         const editor = window.activeTextEditor;
         if (!editor) {
             window.showErrorMessage('No hay ningún editor activo');
@@ -669,7 +846,6 @@ function registerCommands(context: ExtensionContext) {
             window.showErrorMessage('El archivo activo no es un archivo Forja (.fa)');
             return;
         }
-        // Iniciar debug session DAP
         debug.startDebugging(workspace.workspaceFolders?.[0], {
             type: 'forja',
             name: 'Forja: Debug archivo activo',
@@ -677,98 +853,102 @@ function registerCommands(context: ExtensionContext) {
             program: editor.document.fileName,
         });
     });
-    context.subscriptions.push(cmdRunDebug);
+    contexto.subscriptions.push(comandoDepurar);
 
-    // Run GUI
-    const cmdRunGUI = commands.registerCommand('forja.runGUI', () => {
-        executeCommand('run', ['run', '--gui']);
+    // Ejecutar con interfaz gráfica.
+    const comandoEjecutarGui = commands.registerCommand('forja.runGUI', () => {
+        ejecutarOrden('run', ['run', '--gui']);
     });
-    context.subscriptions.push(cmdRunGUI);
+    contexto.subscriptions.push(comandoEjecutarGui);
 
-
-
-    const cmdOpenDiagram = commands.registerCommand('forja.openDiagram', () => {
+    // Abrir el panel lateral de diagramas.
+    const comandoAbrirDiagrama = commands.registerCommand('forja.openDiagram', () => {
         commands.executeCommand('workbench.view.extension.forja-sidebar');
     });
-    context.subscriptions.push(cmdOpenDiagram);
+    contexto.subscriptions.push(comandoAbrirDiagrama);
 
-    const cmdToggleSidebar = commands.registerCommand('forja.toggleSidebar', () => {
+    // Alternar el panel lateral de diagramas.
+    const comandoAlternarLateral = commands.registerCommand('forja.toggleSidebar', () => {
         commands.executeCommand('workbench.view.extension.forja-sidebar');
     });
-    context.subscriptions.push(cmdToggleSidebar);
+    contexto.subscriptions.push(comandoAlternarLateral);
 
-    // ── Build Commands ──
+    // ── Comandos de compilación ──
 
-    // Build (bytecode)
-    const cmdBuild = commands.registerCommand('forja.build', () => {
-        executeCommand('build', ['build']);
+    // Compilar a bytecode.
+    const comandoCompilar = commands.registerCommand('forja.build', () => {
+        ejecutarOrden('build', ['build']);
     });
-    context.subscriptions.push(cmdBuild);
+    contexto.subscriptions.push(comandoCompilar);
 
-    // Build ASM
-    const cmdBuildASM = commands.registerCommand('forja.buildASM', () => {
-        executeCommand('build-asm', ['build', '--asm']);
+    // Compilar a ensamblador.
+    const comandoCompilarAsm = commands.registerCommand('forja.buildASM', () => {
+        ejecutarOrden('build-asm', ['build', '--asm']);
     });
-    context.subscriptions.push(cmdBuildASM);
+    contexto.subscriptions.push(comandoCompilarAsm);
 
-    // Build WASM
-    const cmdBuildWASM = commands.registerCommand('forja.buildWASM', () => {
-        executeCommand('build-wasm', ['build', '--target', 'wasm32-unknown-unknown']);
+    // Compilar a WebAssembly.
+    const comandoCompilarWasm = commands.registerCommand('forja.buildWASM', () => {
+        ejecutarOrden('build-wasm', ['build', '--target', 'wasm32-unknown-unknown']);
     });
-    context.subscriptions.push(cmdBuildWASM);
+    contexto.subscriptions.push(comandoCompilarWasm);
 
-    // ── Android Cross-Compilation (Fase 6) ──
+    // ── Cross-compilación a Android ──
 
     /**
-     * Run a shell script with bash and show output in terminal.
+     * Ejecuta un script del directorio `scripts/` en una terminal dedicada.
+     *
+     * @param script Nombre del archivo de script (por ejemplo `build-android.sh`).
+     * @param argumentos Argumentos adicionales que se pasan al script.
+     * @returns Nada.
      */
-    function runAndroidScript(script: string, args: string[] = []) {
-        const scriptPath = path.join(context.extensionPath, 'scripts', script);
-        if (!fs.existsSync(scriptPath)) {
-            window.showErrorMessage(`Script no encontrado: ${scriptPath}`);
+    function ejecutarScriptAndroid(script: string, argumentos: string[] = []) {
+        const rutaScript = path.join(contexto.extensionPath, 'scripts', script);
+        if (!fs.existsSync(rutaScript)) {
+            window.showErrorMessage(`Script no encontrado: ${rutaScript}`);
             return;
         }
-        const cmd = `bash "${scriptPath}"${args.length > 0 ? ' ' + args.join(' ') : ''}`;
-        const terminal = window.createTerminal({ name: 'Forja Android', cwd: context.extensionPath });
-        terminal.sendText(cmd);
+        const comando = `bash "${rutaScript}"${argumentos.length > 0 ? ' ' + argumentos.join(' ') : ''}`;
+        const terminal = window.createTerminal({ name: 'Forja Android', cwd: contexto.extensionPath });
+        terminal.sendText(comando);
         terminal.show();
     }
 
-    // Build Android (ARM64) — script-based
-    const cmdBuildAndroid = commands.registerCommand('forja.buildAndroid', () => {
-        runAndroidScript('build-android.sh', ['aarch64-linux-android']);
+    // Compilar para Android ARM64.
+    const comandoCompilarAndroid = commands.registerCommand('forja.buildAndroid', () => {
+        ejecutarScriptAndroid('build-android.sh', ['aarch64-linux-android']);
     });
-    context.subscriptions.push(cmdBuildAndroid);
+    contexto.subscriptions.push(comandoCompilarAndroid);
 
-    // Build Android ARM64 (explicit)
-    const cmdBuildAndroidArm64 = commands.registerCommand('forja.buildAndroid.arm64', () => {
-        runAndroidScript('build-android.sh', ['aarch64-linux-android']);
+    // Compilar para Android ARM64 (explícito).
+    const comandoCompilarAndroidArm64 = commands.registerCommand('forja.buildAndroid.arm64', () => {
+        ejecutarScriptAndroid('build-android.sh', ['aarch64-linux-android']);
     });
-    context.subscriptions.push(cmdBuildAndroidArm64);
+    contexto.subscriptions.push(comandoCompilarAndroidArm64);
 
-    // Build Android x86_64
-    const cmdBuildAndroidX86_64 = commands.registerCommand('forja.buildAndroid.x86_64', () => {
-        runAndroidScript('build-android.sh', ['x86_64-linux-android']);
+    // Compilar para Android x86_64.
+    const comandoCompilarAndroidX86 = commands.registerCommand('forja.buildAndroid.x86_64', () => {
+        ejecutarScriptAndroid('build-android.sh', ['x86_64-linux-android']);
     });
-    context.subscriptions.push(cmdBuildAndroidX86_64);
+    contexto.subscriptions.push(comandoCompilarAndroidX86);
 
-    // Build Android ALL targets
-    const cmdBuildAndroidAll = commands.registerCommand('forja.buildAndroid.all', () => {
-        runAndroidScript('build-android.sh', []);
+    // Compilar para todas las arquitecturas Android.
+    const comandoCompilarAndroidTodo = commands.registerCommand('forja.buildAndroid.all', () => {
+        ejecutarScriptAndroid('build-android.sh', []);
     });
-    context.subscriptions.push(cmdBuildAndroidAll);
+    contexto.subscriptions.push(comandoCompilarAndroidTodo);
 
-    // Check NDK setup (validation only)
-    const cmdCheckNDK = commands.registerCommand('forja.checkAndroidNDK', () => {
-        runAndroidScript('toolchain-android.sh', ['check']);
+    // Verificar la instalación del NDK de Android.
+    const comandoVerificarNdk = commands.registerCommand('forja.checkAndroidNDK', () => {
+        ejecutarScriptAndroid('toolchain-android.sh', ['check']);
     });
-    context.subscriptions.push(cmdCheckNDK);
+    contexto.subscriptions.push(comandoVerificarNdk);
 
-    // Deploy to Android device via ADB
-    const cmdDeployAndroid = commands.registerCommand('forja.deployAndroid', async () => {
-        // First detect device
-        const adbPath = findOnPath('adb');
-        if (!adbPath) {
+    // Desplegar el binario compilado en un dispositivo Android por ADB.
+    const comandoDesplegarAndroid = commands.registerCommand('forja.deployAndroid', async () => {
+        // Detectar primero un dispositivo conectado.
+        const rutaAdb = buscarEnRuta('adb');
+        if (!rutaAdb) {
             window.showErrorMessage(
                 'ADB no encontrado en PATH. Instala Android Platform Tools o agregalo la dirección en PATH.',
                 'Entendido'
@@ -776,14 +956,14 @@ function registerCommands(context: ExtensionContext) {
             return;
         }
 
-        outputChannel.appendLine('Detectando dispositivos Android...');
-        exec('adb devices', (err: Error | null, stdout: string) => {
-            if (err) {
-                window.showErrorMessage(`Error ejecutando ADB: ${err.message}`);
+        canalSalida.appendLine('Detectando dispositivos Android...');
+        exec('adb devices', (error: Error | null, salida: string) => {
+            if (error) {
+                window.showErrorMessage(`Error ejecutando ADB: ${error.message}`);
                 return;
             }
-            const lines = stdout.trim().split('\n').filter(l => l.includes('\tdevice'));
-            if (lines.length === 0) {
+            const lineas = salida.trim().split('\n').filter(linea => linea.includes('\tdevice'));
+            if (lineas.length === 0) {
                 window.showErrorMessage(
                     'No se detectaron dispositivos Android conectados.',
                     'Entendido'
@@ -791,392 +971,444 @@ function registerCommands(context: ExtensionContext) {
                 return;
             }
 
-            const deviceId = lines[0].split('\t')[0];
-            outputChannel.appendLine(`Dispositivo detectado: ${deviceId}`);
+            const idDispositivo = lineas[0].split('\t')[0];
+            canalSalida.appendLine(`Dispositivo detectado: ${idDispositivo}`);
 
-            // Ask user for binary path
+            // Pedir al usuario la ruta del binario compilado.
             window.showInputBox({
                 prompt: 'Ruta al binario Forja compilado para Android',
                 placeHolder: 'target/aarch64-linux-android/release/forja.exe',
-            }).then(binaryPath => {
-                if (!binaryPath) return;
+            }).then(rutaBinario => {
+                if (!rutaBinario) return;
 
-                const remotePath = `/data/local/tmp/forja`;
-                const pushCmd = `adb -s ${deviceId} push "${binaryPath}" ${remotePath}`;
-                const chmodCmd = `adb -s ${deviceId} shell chmod +x ${remotePath}`;
+                const rutaRemota = `/data/local/tmp/forja`;
+                const comandoEnvio = `adb -s ${idDispositivo} push "${rutaBinario}" ${rutaRemota}`;
+                const comandoPermisos = `adb -s ${idDispositivo} shell chmod +x ${rutaRemota}`;
 
                 const terminal = window.createTerminal({ name: 'Forja ADB Deploy' });
-                terminal.sendText(`${pushCmd} && ${chmodCmd} && echo "Deploy completo: ${remotePath}"`);
+                terminal.sendText(`${comandoEnvio} && ${comandoPermisos} && echo "Deploy completo: ${rutaRemota}"`);
                 terminal.show();
             });
         });
     });
-    context.subscriptions.push(cmdDeployAndroid);
+    contexto.subscriptions.push(comandoDesplegarAndroid);
 
-    // ── Testing & Benchmarking ──
+    // ── Pruebas y benchmarks ──
 
-    const cmdTest = commands.registerCommand('forja.test', () => {
-        executeCommand('test', ['test']);
+    const comandoPruebas = commands.registerCommand('forja.test', () => {
+        ejecutarOrden('test', ['test']);
     });
-    context.subscriptions.push(cmdTest);
+    contexto.subscriptions.push(comandoPruebas);
 
-    const cmdBench = commands.registerCommand('forja.bench', () => {
-        executeCommand('bench', ['bench']);
+    const comandoBenchmark = commands.registerCommand('forja.bench', () => {
+        ejecutarOrden('bench', ['bench']);
     });
-    context.subscriptions.push(cmdBench);
+    contexto.subscriptions.push(comandoBenchmark);
 
-    // ── Tooling Commands ──
+    // ── Herramientas ──
 
-    // Format
-    const cmdFmt = commands.registerCommand('forja.fmt', () => {
-        executeCommand('fmt', ['fmt']);
+    // Formatear el archivo activo.
+    const comandoFormatear = commands.registerCommand('forja.fmt', () => {
+        ejecutarOrden('fmt', ['fmt']);
     });
-    context.subscriptions.push(cmdFmt);
+    contexto.subscriptions.push(comandoFormatear);
 
-    // Generate docs
-    const cmdDoc = commands.registerCommand('forja.doc', () => {
-        executeCommand('doc', ['doc']);
+    // Generar documentación.
+    const comandoDocumentar = commands.registerCommand('forja.doc', () => {
+        ejecutarOrden('doc', ['doc']);
     });
-    context.subscriptions.push(cmdDoc);
+    contexto.subscriptions.push(comandoDocumentar);
 
-    // Generate diagram
-    const cmdDiagram = commands.registerCommand('forja.diagram', () => {
-        executeCommand('diagram', ['diagram']);
+    // Generar el diagrama de flujo.
+    const comandoDiagrama = commands.registerCommand('forja.diagram', () => {
+        ejecutarOrden('diagram', ['diagram']);
     });
-    context.subscriptions.push(cmdDiagram);
+    contexto.subscriptions.push(comandoDiagrama);
 
-    // Transpile to Rust
-    const cmdTranspile = commands.registerCommand('forja.transpile', () => {
-        executeCommand('transpile', ['transpile']);
+    // Transpilar a Rust.
+    const comandoTranspilar = commands.registerCommand('forja.transpile', () => {
+        ejecutarOrden('transpile', ['transpile']);
     });
-    context.subscriptions.push(cmdTranspile);
+    contexto.subscriptions.push(comandoTranspilar);
 
-    // ── Hot Reload / Restart ──
+    // ── Recarga en caliente y reinicio ──
 
-    // Hot Reload: kill and re-run the current file
-    const cmdHotReload = commands.registerCommand('forja.hotReload', async () => {
+    // Relanzar el archivo activo matando el proceso anterior.
+    const comandoRecargaCaliente = commands.registerCommand('forja.hotReload', async () => {
         const editor = window.activeTextEditor;
         if (!editor || editor.document.languageId !== 'forja') {
             window.showErrorMessage('No hay un archivo Forja activo');
             return;
         }
-        const filePath = editor.document.fileName;
-        const running = runningProcesses.get(filePath);
-        if (running) {
-            outputChannel.appendLine(`Hot Reload forzado: ${filePath}`);
-            await killProcess(filePath);
-            startProcess(filePath, running.mode);
+        const rutaArchivo = editor.document.fileName;
+        const procesoVivo = procesosEnEjecucion.get(rutaArchivo);
+        if (procesoVivo) {
+            canalSalida.appendLine(`Hot Reload forzado: ${rutaArchivo}`);
+            await matarProceso(rutaArchivo);
+            iniciarProceso(rutaArchivo, procesoVivo.modo);
         } else {
-            // No running process, start one
-            startProcess(filePath, 'run');
+            // No había proceso: se arranca uno nuevo en modo ejecución.
+            iniciarProceso(rutaArchivo, 'run');
         }
     });
-    context.subscriptions.push(cmdHotReload);
+    contexto.subscriptions.push(comandoRecargaCaliente);
 
-    // Hot Restart: kill ALL running processes and start fresh
-    const cmdHotRestart = commands.registerCommand('forja.hotRestart', async () => {
-        const count = runningProcesses.size;
-        if (count === 0) {
+    // Matar todos los procesos vivos.
+    const comandoReinicioCaliente = commands.registerCommand('forja.hotRestart', async () => {
+        const cantidad = procesosEnEjecucion.size;
+        if (cantidad === 0) {
             window.showInformationMessage('No hay procesos activos para reiniciar');
             return;
         }
-        outputChannel.appendLine(`Hot Restart: reiniciando ${count} proceso(s)`);
-        for (const [file] of runningProcesses) {
-            await killProcess(file);
-            // Re-start each
-            // (they'll be re-started by onDidSaveTextDocument when saved)
+        canalSalida.appendLine(`Hot Restart: reiniciando ${cantidad} proceso(s)`);
+        for (const [archivo] of procesosEnEjecucion) {
+            await matarProceso(archivo);
+            // Cada proceso se relanzará cuando se guarde su archivo.
         }
-        window.showInformationMessage(`Se reiniciaron ${count} proceso(s). Guarda los archivos para re-ejecutar.`);
+        window.showInformationMessage(`Se reiniciaron ${cantidad} proceso(s). Guarda los archivos para re-ejecutar.`);
     });
-    context.subscriptions.push(cmdHotRestart);
+    contexto.subscriptions.push(comandoReinicioCaliente);
 
-    // Toggle hot reload on/off
-    const cmdToggleHotReload = commands.registerCommand('forja.toggleHotReload', () => {
-        hotReloadEnabled = !hotReloadEnabled;
-        workspace.getConfiguration('forja').update('hotReload.enabled', hotReloadEnabled, true);
-        const msg = hotReloadEnabled ? 'Hot Reload activado' : 'Hot Reload desactivado';
-        window.showInformationMessage(msg);
-        outputChannel.appendLine(msg);
-        updateStatusBar();
+    // Activar o desactivar la recarga en caliente.
+    const comandoAlternarRecarga = commands.registerCommand('forja.toggleHotReload', () => {
+        recargaCalienteActiva = !recargaCalienteActiva;
+        workspace.getConfiguration('forja').update('hotReload.enabled', recargaCalienteActiva, true);
+        const mensaje = recargaCalienteActiva ? 'Hot Reload activado' : 'Hot Reload desactivado';
+        window.showInformationMessage(mensaje);
+        canalSalida.appendLine(mensaje);
+        actualizarBarraEstado();
     });
-    context.subscriptions.push(cmdToggleHotReload);
+    contexto.subscriptions.push(comandoAlternarRecarga);
 
-    // ── Project & Toolchain ──
+    // ── Proyecto y toolchain ──
 
-    const cmdNewProject = commands.registerCommand('forja.newProject', async () => {
-        const folder = await window.showInputBox({
+    // Crear un proyecto Forja nuevo en la raíz del espacio de trabajo.
+    const comandoNuevoProyecto = commands.registerCommand('forja.newProject', async () => {
+        const nombreCarpeta = await window.showInputBox({
             prompt: 'Nombre del nuevo proyecto Forja',
             placeHolder: 'mi-proyecto',
-            validateInput: (value) => {
-                if (!value || value.trim().length === 0) {
+            validateInput: (valor) => {
+                if (!valor || valor.trim().length === 0) {
                     return 'El nombre no puede estar vacío';
                 }
-                if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(value)) {
+                if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(valor)) {
                     return 'Usa solo letras, números, guiones y guiones bajos';
                 }
                 return null;
             },
         });
-        if (folder) {
-            const targetUri = workspace.workspaceFolders?.[0]?.uri;
-            if (targetUri) {
-                const projectPath = path.join(targetUri.fsPath, folder);
-                getOrCreateTerminal().sendText(`forja new "${projectPath}"`);
-                getOrCreateTerminal().show();
+        if (nombreCarpeta) {
+            const uriDestino = workspace.workspaceFolders?.[0]?.uri;
+            if (uriDestino) {
+                const rutaProyecto = path.join(uriDestino.fsPath, nombreCarpeta);
+                obtenerOCrearTerminal().sendText(`forja new "${rutaProyecto}"`);
+                obtenerOCrearTerminal().show();
             } else {
                 window.showErrorMessage('No hay ninguna carpeta de workspace abierta');
             }
         }
     });
-    context.subscriptions.push(cmdNewProject);
+    contexto.subscriptions.push(comandoNuevoProyecto);
 
-    const cmdInstallToolchain = commands.registerCommand('forja.installToolchain', () => {
+    // Compilar la toolchain local con las características de LSP y DAP.
+    const comandoInstalarToolchain = commands.registerCommand('forja.installToolchain', () => {
         const terminal = window.createTerminal('Forja Toolchain');
         terminal.sendText('cargo build --features lsp,dap');
         terminal.sendText('');
         terminal.sendText('echo "Si necesitas Android NDK, instala Android Studio o configura ANDROID_NDK_HOME"');
         terminal.show();
     });
-    context.subscriptions.push(cmdInstallToolchain);
+    contexto.subscriptions.push(comandoInstalarToolchain);
 
-    // ── VM / Target Selectors ──
+    // ── Selectores de VM y plataforma ──
 
-    const cmdSelectVM = commands.registerCommand('forja.selectVM', async () => {
-        const items: (QuickPickItem & { value: VMMode })[] = VM_MODES.map((mode) => ({
-            label: `${VM_ICONS[mode]} ${VM_LABELS[mode]}`,
-            description: mode === 'fastvm' ? 'Por defecto, ultra-rápida'
-                : mode === 'vm' ? 'VM original, estable'
+    // Selector rápido del modo de VM por defecto.
+    const comandoSeleccionarVM = commands.registerCommand('forja.selectVM', async () => {
+        const opciones: (QuickPickItem & { value: ModoVM })[] = MODOS_VM.map((modo) => ({
+            label: `${ICONOS_VM[modo]} ${ETIQUETAS_VM[modo]}`,
+            description: modo === 'fastvm' ? 'Por defecto, ultra-rápida'
+                : modo === 'vm' ? 'VM original, estable'
                     : 'Compilación JIT nativa con fallback',
-            value: mode,
+            value: modo,
         }));
 
-        const picked = await window.showQuickPick(items, {
+        const seleccion = await window.showQuickPick(opciones, {
             placeHolder: 'Seleccionar VM por defecto',
         });
 
-        if (picked) {
-            currentVMMode = picked.value;
-            await workspace.getConfiguration('forja').update('defaultVM', picked.value, true);
-            updateStatusBar();
-            outputChannel.appendLine(`VM cambiada a: ${picked.value}`);
+        if (seleccion) {
+            modoVMActual = seleccion.value;
+            await workspace.getConfiguration('forja').update('defaultVM', seleccion.value, true);
+            actualizarBarraEstado();
+            canalSalida.appendLine(`VM cambiada a: ${seleccion.value}`);
 
-            window.showInformationMessage(`VM por defecto cambiada a: ${VM_LABELS[picked.value]}`, 'OK');
+            window.showInformationMessage(`VM por defecto cambiada a: ${ETIQUETAS_VM[seleccion.value]}`, 'OK');
         }
     });
-    context.subscriptions.push(cmdSelectVM);
+    contexto.subscriptions.push(comandoSeleccionarVM);
 
-    const cmdSelectTarget = commands.registerCommand('forja.selectTarget', async () => {
-        const items: (QuickPickItem & { value: TargetPlatform })[] = TARGETS.map((target) => ({
-            label: `$(target) ${target}`,
-            description: target === 'native' ? 'Plataforma actual (por defecto)'
-                : target === 'wasm32-unknown-unknown' ? 'WebAssembly'
-                    : target.includes('android') ? 'Android (cross-compile)'
+    // Selector rápido de la plataforma objetivo.
+    const comandoSeleccionarObjetivo = commands.registerCommand('forja.selectTarget', async () => {
+        const opciones: (QuickPickItem & { value: PlataformaObjetivo })[] = PLATAFORMAS.map((objetivo) => ({
+            label: `$(target) ${objetivo}`,
+            description: objetivo === 'native' ? 'Plataforma actual (por defecto)'
+                : objetivo === 'wasm32-unknown-unknown' ? 'WebAssembly'
+                    : objetivo.includes('android') ? 'Android (cross-compile)'
                         : 'Windows MSVC',
-            value: target,
+            value: objetivo,
         }));
 
-        const picked = await window.showQuickPick(items, {
+        const seleccion = await window.showQuickPick(opciones, {
             placeHolder: 'Seleccionar plataforma target',
         });
 
-        if (picked) {
-            currentTarget = picked.value;
-            await workspace.getConfiguration('forja').update('defaultTarget', picked.value, true);
-            updateStatusBar();
-            outputChannel.appendLine(`Target cambiado a: ${picked.value}`);
-            window.showInformationMessage(`Target cambiado a: ${picked.value}`, 'OK');
+        if (seleccion) {
+            objetivoActual = seleccion.value;
+            await workspace.getConfiguration('forja').update('defaultTarget', seleccion.value, true);
+            actualizarBarraEstado();
+            canalSalida.appendLine(`Target cambiado a: ${seleccion.value}`);
+            window.showInformationMessage(`Target cambiado a: ${seleccion.value}`, 'OK');
         }
     });
-    context.subscriptions.push(cmdSelectTarget);
+    contexto.subscriptions.push(comandoSeleccionarObjetivo);
 
-    // Show output channel
-    const cmdShowOutput = commands.registerCommand('forja.showOutput', () => {
-        outputChannel.show();
+    // Mostrar el canal de salida.
+    const comandoMostrarSalida = commands.registerCommand('forja.showOutput', () => {
+        canalSalida.show();
     });
-    context.subscriptions.push(cmdShowOutput);
-
+    contexto.subscriptions.push(comandoMostrarSalida);
 }
 
+// ======================================================================
+// Gestión de procesos (recarga en caliente)
+// ======================================================================
+
 /**
- * Kill a running process by file path.
+ * Mata el proceso asociado a un archivo y lo elimina del registro.
+ *
+ * En Windows usa `taskkill` con `/t` para matar también los procesos hijos;
+ * en el resto de plataformas envía `SIGTERM` y, si no responde en 2 s,
+ * `SIGKILL`. Nunca rechaza: siempre resuelve, incluso si el proceso ya no existe.
+ *
+ * @param rutaArchivo Ruta absoluta del archivo `.fa` cuyo proceso se quiere matar.
+ * @returns Promesa que se resuelve cuando el proceso terminó o se dio por terminado.
  */
-function killProcess(filePath: string): Promise<void> {
-    return new Promise((resolve) => {
-        const entry = runningProcesses.get(filePath);
-        if (!entry) { resolve(); return; }
-        const { process: proc } = entry;
-        runningProcesses.delete(filePath);
-        updateStatusBar();
+function matarProceso(rutaArchivo: string): Promise<void> {
+    return new Promise((resolver) => {
+        const entrada = procesosEnEjecucion.get(rutaArchivo);
+        if (!entrada) { resolver(); return; }
+        const { proceso } = entrada;
+        procesosEnEjecucion.delete(rutaArchivo);
+        actualizarBarraEstado();
 
         try {
             if (process.platform === 'win32') {
-                // On Windows, taskkill is more reliable
-                const kill = spawn('taskkill', ['/pid', String(proc.pid), '/f', '/t']);
-                kill.on('close', () => resolve());
-                kill.on('error', () => resolve());
-                setTimeout(resolve, 1000);
+                // En Windows `taskkill` es más fiable que enviar señales.
+                const matar = spawn('taskkill', ['/pid', String(proceso.pid), '/f', '/t']);
+                matar.on('close', () => resolver());
+                matar.on('error', () => resolver());
+                setTimeout(resolver, 1000);
             } else {
-                proc.kill('SIGTERM');
+                proceso.kill('SIGTERM');
                 setTimeout(() => {
-                    try { proc.kill('SIGKILL'); } catch { }
-                    resolve();
+                    try { proceso.kill('SIGKILL'); } catch { }
+                    resolver();
                 }, 2000);
             }
         } catch {
-            resolve();
+            resolver();
         }
     });
 }
 
 /**
- * Start a Forja process and track it for hot reload.
+ * Lanza un proceso `forja run` sobre un archivo y lo registra para la recarga.
+ *
+ * Si ya había un proceso para ese archivo lo mata primero. El modo de VM y el
+ * modo gráfico se traducen a banderas de línea de órdenes. La salida estándar
+ * y la de error se vuelcan al canal de salida de la extensión.
+ *
+ * @param rutaArchivo Ruta absoluta del archivo `.fa` que se quiere ejecutar.
+ * @param modo Modo de ejecución: `run` para consola, `gui` para interfaz gráfica.
+ * @returns Nada.
  */
-function startProcess(filePath: string, mode: 'run' | 'gui') {
-    // Kill existing if any
-    if (runningProcesses.has(filePath)) {
-        killProcess(filePath);
+function iniciarProceso(rutaArchivo: string, modo: 'run' | 'gui') {
+    // Si ya había un proceso para este archivo, se mata antes de relanzar.
+    if (procesosEnEjecucion.has(rutaArchivo)) {
+        matarProceso(rutaArchivo);
     }
 
-    const cmd = 'forja';
-    const vmFlag = currentVMMode === 'fastvm' ? '--fast' : currentVMMode === 'jit' ? '--jit' : '';
-    const modeFlag = mode === 'gui' ? '--gui' : '';
-    const args = ['run', vmFlag, modeFlag, `"${filePath}"`].filter(Boolean);
+    const comando = 'forja';
+    const banderaVM = modoVMActual === 'fastvm' ? '--fast' : modoVMActual === 'jit' ? '--jit' : '';
+    const banderaModo = modo === 'gui' ? '--gui' : '';
+    const argumentos = ['run', banderaVM, banderaModo, `"${rutaArchivo}"`].filter(Boolean);
 
-    const childProc = spawn(cmd, args, {
-        cwd: path.dirname(filePath),
+    const procesoHijo = spawn(comando, argumentos, {
+        cwd: path.dirname(rutaArchivo),
         windowsHide: true,
         shell: true,
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    const entry: RunningProcess = {
-        process: childProc,
-        file: filePath,
-        startTime: Date.now(),
-        mode,
+    const entrada: ProcesoEnEjecucion = {
+        proceso: procesoHijo,
+        archivo: rutaArchivo,
+        momentoInicio: Date.now(),
+        modo: modo,
     };
 
-    runningProcesses.set(filePath, entry);
-    updateStatusBar();
+    procesosEnEjecucion.set(rutaArchivo, entrada);
+    actualizarBarraEstado();
 
-    outputChannel.appendLine(`Proceso iniciado: ${cmd} ${args.join(' ')} (PID: ${childProc.pid})`);
+    canalSalida.appendLine(`Proceso iniciado: ${comando} ${argumentos.join(' ')} (PID: ${procesoHijo.pid})`);
 
-    childProc.stdout?.on('data', (data: string | Buffer) => {
-        outputChannel.append(data.toString());
+    procesoHijo.stdout?.on('data', (datos: string | Buffer) => {
+        canalSalida.append(datos.toString());
     });
 
-    childProc.stderr?.on('data', (data: string | Buffer) => {
-        outputChannel.append(`[${mode}] ${data.toString()}`);
+    procesoHijo.stderr?.on('data', (datos: string | Buffer) => {
+        canalSalida.append(`[${modo}] ${datos.toString()}`);
     });
 
-    childProc.on('close', (code: number | null) => {
-        // Only clean up if this is still the current entry
-        if (runningProcesses.get(filePath)?.process === childProc) {
-            runningProcesses.delete(filePath);
-            updateStatusBar();
+    procesoHijo.on('close', (codigo: number | null) => {
+        // Solo se limpia el registro si esta entrada sigue siendo la vigente.
+        if (procesosEnEjecucion.get(rutaArchivo)?.proceso === procesoHijo) {
+            procesosEnEjecucion.delete(rutaArchivo);
+            actualizarBarraEstado();
         }
-        outputChannel.appendLine(`Proceso terminado (PID: ${childProc.pid}, codigo: ${code})`);
+        canalSalida.appendLine(`Proceso terminado (PID: ${procesoHijo.pid}, codigo: ${codigo})`);
     });
 
-    childProc.on('error', (err: Error) => {
-        outputChannel.appendLine(`Error iniciando proceso: ${err.message}`);
-        if (runningProcesses.get(filePath)?.process === childProc) {
-            runningProcesses.delete(filePath);
-            updateStatusBar();
+    procesoHijo.on('error', (error: Error) => {
+        canalSalida.appendLine(`Error iniciando proceso: ${error.message}`);
+        if (procesosEnEjecucion.get(rutaArchivo)?.proceso === procesoHijo) {
+            procesosEnEjecucion.delete(rutaArchivo);
+            actualizarBarraEstado();
         }
     });
 }
 
 // ======================================================================
-// Execution Helper
+// Ejecución de órdenes de la CLI
 // ======================================================================
 
 /**
- * Execute a CLI command for the active Forja file.
- * Supports 3 modes:
- *   - Task execution (for build/test/bench)
- *   - Terminal execution (for run/debug/gui)
- *   - Direct command (for tools like fmt/doc)
+ * Ejecuta una orden de la CLI `forja` sobre el archivo activo.
+ *
+ * Comprueba que haya un editor activo y que sea un archivo Forja, compone la
+ * línea de órdenes con los argumentos de configuración (`forja.buildArgs`) y
+ * la envía a la terminal dedicada.
+ *
+ * @param nombreTarea Identificador interno de la tarea que se ejecuta.
+ * @param argumentos Argumentos base de la CLI, sin la ruta del archivo.
+ * @returns Nada.
  */
-function executeCommand(taskName: TaskName, args: string[]) {
+function ejecutarOrden(nombreTarea: NombreTarea, argumentos: string[]) {
     const editor = window.activeTextEditor;
     if (!editor) {
         window.showErrorMessage('No hay ningún editor activo');
         return;
     }
 
-    const document = editor.document;
-    if (document.languageId !== 'forja') {
+    const documento = editor.document;
+    if (documento.languageId !== 'forja') {
         window.showErrorMessage('El archivo activo no es un archivo Forja (.fa)');
         return;
     }
 
-    // Build the command
-    const filePath = document.fileName;
-    const extraArgs = workspace.getConfiguration('forja').get<string>('buildArgs', '');
-    const allArgs = [...args, `"${filePath}"`, extraArgs].filter(a => a).join(' ');
+    // Composición de la línea de órdenes final.
+    const rutaArchivo = documento.fileName;
+    const argumentosExtra = workspace.getConfiguration('forja').get<string>('buildArgs', '');
+    const todosLosArgumentos = [...argumentos, `"${rutaArchivo}"`, argumentosExtra].filter(a => a).join(' ');
 
-    // Determine execution strategy based on task type
-    const isBuildTask = taskName === 'build' || taskName === 'build-asm' || taskName === 'build-wasm' || taskName === 'build-android';
-    const isToolTask = taskName === 'fmt' || taskName === 'doc' || taskName === 'diagram' || taskName === 'transpile';
+    const comando = `forja ${todosLosArgumentos}`;
+    const terminal = obtenerOCrearTerminal();
 
-    // For build and tool tasks, we let the user see results
-    const cmd = `forja ${allArgs}`;
-    const terminal = getOrCreateTerminal();
-
-    // Clear terminal if configured
+    // Vaciar la terminal si el usuario lo pidió.
     if (workspace.getConfiguration('forja').get<boolean>('terminal.clearBeforeRun', false)) {
-        terminal.sendText(undefined as any); // undefined sends clear via special handling
+        terminal.sendText(undefined as any); // `undefined` vacía la terminal.
     }
 
     if (workspace.getConfiguration('forja').get<boolean>('terminal.preserveFocus', false)) {
-        terminal.sendText(cmd);
+        terminal.sendText(comando);
     } else {
-        terminal.sendText(cmd);
+        terminal.sendText(comando);
         terminal.show();
     }
 
-    outputChannel.appendLine(`Ejecutando: ${cmd}`);
+    canalSalida.appendLine(`Ejecutando: ${comando}`);
 }
 
 /**
- * Get or create the Forja-dedicated terminal.
+ * Devuelve la terminal dedicada de Forja, creándola si aún no existe.
+ *
+ * Registra el cierre de la terminal para volver a crearla cuando el usuario la
+ * elimine.
+ *
+ * @returns La terminal dedicada, reutilizada entre llamadas.
  */
-function getOrCreateTerminal(): Terminal {
-    if (forjaTerminal === undefined) {
-        forjaTerminal = window.createTerminal(TERMINAL_NAME);
-        // Handle terminal close
-        window.onDidCloseTerminal((t) => {
-            if (t.name === TERMINAL_NAME) {
-                forjaTerminal = undefined;
+function obtenerOCrearTerminal(): Terminal {
+    if (terminalForja === undefined) {
+        terminalForja = window.createTerminal(NOMBRE_TERMINAL);
+        window.onDidCloseTerminal((terminal) => {
+            if (terminal.name === NOMBRE_TERMINAL) {
+                terminalForja = undefined;
             }
         });
     }
-    return forjaTerminal;
+    return terminalForja;
 }
 
 // ======================================================================
-// Debug Adapter
+// Depuración (DAP)
 // ======================================================================
 
-class ForjaDebugAdapterDescriptorFactory implements DebugAdapterDescriptorFactory {
-    constructor(private context: ExtensionContext) { }
+/**
+ * Fábrica de descriptores del adaptador de depuración.
+ *
+ * Localiza el binario `forja-dap` y crea un descriptor que lo ejecuta como
+ * adaptador al que se conecta VS Code.
+ */
+class FabricaDescriptoresDepuracionForja implements DebugAdapterDescriptorFactory {
+    /**
+     * @param contexto Contexto de la extensión usado para resolver rutas.
+     */
+    constructor(private contexto: ExtensionContext) { }
 
-    createDebugAdapterDescriptor(_session: DebugSession): DebugAdapterDescriptor | undefined {
-        const dapPath = findDapBinary(this.context);
-        if (!dapPath) {
-            const msg = 'forja-dap no encontrado. Compila con: cargo build --features dap';
-            outputChannel.appendLine('[ADVERTENCIA] ' + msg);
-            window.showErrorMessage(msg, 'Entendido');
+    /**
+     * Crea el descriptor del adaptador de depuración.
+     *
+     * @param _sesion Sesión de depuración que se está creando (no se usa).
+     * @returns Descriptor que ejecuta `forja-dap`, o `undefined` si no se encontró.
+     */
+    createDebugAdapterDescriptor(_sesion: DebugSession): DebugAdapterDescriptor | undefined {
+        const rutaDap = buscarBinarioDap(this.contexto);
+        if (!rutaDap) {
+            const mensaje = 'forja-dap no encontrado. Compila con: cargo build --features dap';
+            canalSalida.appendLine('[ADVERTENCIA] ' + mensaje);
+            window.showErrorMessage(mensaje, 'Entendido');
             return undefined;
         }
-        outputChannel.appendLine(`DAP binary: ${dapPath}`);
-        return new DebugAdapterExecutable(dapPath, []);
+        canalSalida.appendLine(`Binario DAP: ${rutaDap}`);
+        return new DebugAdapterExecutable(rutaDap, []);
     }
 }
 
-class ForjaDebugConfigurationProvider implements DebugConfigurationProvider {
-    provideDebugConfigurations(_folder: WorkspaceFolder | undefined, _token?: CancellationToken): DebugConfiguration[] {
+/**
+ * Proveedor de configuraciones de depuración.
+ *
+ * Aporta una configuración de lanzamiento por defecto y resuelve el programa a
+ * depurar tomándolo del editor activo cuando el usuario no lo indica.
+ */
+class ProveedorConfiguracionDepuracionForja implements DebugConfigurationProvider {
+    /**
+     * Devuelve las configuraciones de depuración que ofrece la extensión.
+     *
+     * @param _carpeta Carpeta del espacio de trabajo (no se usa).
+     * @param _token Token de cancelación (no se usa).
+     * @returns Lista con la configuración de lanzamiento por defecto.
+     */
+    provideDebugConfigurations(_carpeta: WorkspaceFolder | undefined, _token?: CancellationToken): DebugConfiguration[] {
         return [
             {
                 type: 'forja',
@@ -1187,156 +1419,221 @@ class ForjaDebugConfigurationProvider implements DebugConfigurationProvider {
         ];
     }
 
+    /**
+     * Completa la configuración de depuración antes de lanzarla.
+     *
+     * Si no se indicó `program`, se toma el archivo del editor activo siempre
+     * que sea un archivo Forja.
+     *
+     * @param _carpeta Carpeta del espacio de trabajo (no se usa).
+     * @param configuracionDepuracion Configuración tal como la escribió el usuario.
+     * @param _token Token de cancelación (no se usa).
+     * @returns La configuración completada.
+     */
     resolveDebugConfiguration(
-        _folder: WorkspaceFolder | undefined,
-        debugConfiguration: DebugConfiguration,
+        _carpeta: WorkspaceFolder | undefined,
+        configuracionDepuracion: DebugConfiguration,
         _token?: CancellationToken
     ): DebugConfiguration | undefined {
-        // If no program specified, use active editor
-        if (!debugConfiguration.program) {
+        // Sin programa explícito, se usa el archivo del editor activo.
+        if (!configuracionDepuracion.program) {
             const editor = window.activeTextEditor;
             if (editor && editor.document.languageId === 'forja') {
-                debugConfiguration.program = editor.document.fileName;
+                configuracionDepuracion.program = editor.document.fileName;
             }
         }
-        return debugConfiguration;
+        return configuracionDepuracion;
     }
 }
 
 /**
- * Find the forja-dap binary in the project build directory or on PATH.
+ * Localiza el binario del adaptador de depuración.
+ *
+ * Busca primero en `target/debug`, luego en `target/release` y por último en
+ * el `PATH` del sistema.
+ *
+ * @param contexto Contexto de la extensión usado para resolver rutas relativas.
+ * @returns Ruta absoluta del binario, o `undefined` si no se encontró.
  */
-function findDapBinary(context: ExtensionContext): string | undefined {
-    const isWindows = process.platform === 'win32';
-    const exeName = `forja-dap${isWindows ? '.exe' : ''}`;
+function buscarBinarioDap(contexto: ExtensionContext): string | undefined {
+    const esWindows = process.platform === 'win32';
+    const nombreEjecutable = `forja-dap${esWindows ? '.exe' : ''}`;
 
-    const debugPath = context.asAbsolutePath(path.join('..', 'target', 'debug', exeName));
-    if (fs.existsSync(debugPath)) {
-        return debugPath;
+    const rutaDebug = contexto.asAbsolutePath(path.join('..', 'target', 'debug', nombreEjecutable));
+    if (fs.existsSync(rutaDebug)) {
+        return rutaDebug;
     }
 
-    const releasePath = context.asAbsolutePath(path.join('..', 'target', 'release', exeName));
-    if (fs.existsSync(releasePath)) {
-        return releasePath;
+    const rutaRelease = contexto.asAbsolutePath(path.join('..', 'target', 'release', nombreEjecutable));
+    if (fs.existsSync(rutaRelease)) {
+        return rutaRelease;
     }
 
-    return findOnPath('forja-dap');
+    return buscarEnRuta('forja-dap');
 }
 
 // ======================================================================
-// Task Provider
+// Proveedor de tareas
 // ======================================================================
 
-interface ForjaTaskDefinition extends TaskDefinition {
-    task: TaskName;
+/** Definición de una tarea de Forja tal como la consume VS Code. */
+interface DefinicionTareaForja extends TaskDefinition {
+    /** Tarea interna que se ejecutará. */
+    task: NombreTarea;
+    /** Argumentos adicionales de la CLI, si los hay. */
     args?: string;
 }
 
-class ForjaTaskProvider implements TaskProvider {
+/**
+ * Proveedor de tareas que expone los comandos habituales de la CLI como tareas
+ * de VS Code, para poder lanzarlas desde el menú o encadenarlas.
+ */
+class ProveedorTareasForja implements TaskProvider {
+    /**
+     * Genera las tareas disponibles a partir del archivo Forja visible.
+     *
+     * @returns Lista de tareas; vacía si no hay ningún editor Forja visible.
+     */
     async provideTasks(): Promise<Task[]> {
-        const tasks: Task[] = [];
-        const editors = window.visibleTextEditors.filter(e => e.document.languageId === 'forja');
-        if (editors.length === 0) {
+        const tareas: Task[] = [];
+        const editores = window.visibleTextEditors.filter(editor => editor.document.languageId === 'forja');
+        if (editores.length === 0) {
             return [];
         }
 
-        const filePath = editors[0].document.fileName;
+        const rutaArchivo = editores[0].document.fileName;
 
-        // Generate tasks for common operations
-        const taskConfigs: { name: TaskName; label: string; group: TaskGroup; cmdArgs: string }[] = [
-            { name: 'run', label: 'Run (FastVM)', group: TaskGroup.Build, cmdArgs: 'run --fast' },
-            { name: 'run-jit', label: 'Run (JIT)', group: TaskGroup.Build, cmdArgs: 'run --jit' },
-            { name: 'test', label: 'Run tests', group: TaskGroup.Test, cmdArgs: 'test' },
-            { name: 'build', label: 'Build bytecode', group: TaskGroup.Build, cmdArgs: 'build' },
-            { name: 'build-asm', label: 'Build to ASM', group: TaskGroup.Build, cmdArgs: 'build --asm' },
-            { name: 'build-wasm', label: 'Build to WASM', group: TaskGroup.Build, cmdArgs: 'build --target wasm32-unknown-unknown' },
+        // Catálogo de tareas que se publican al usuario.
+        const configuracionesTarea: { nombre: NombreTarea; etiqueta: string; grupo: TaskGroup; argumentos: string }[] = [
+            { nombre: 'run', etiqueta: 'Run (FastVM)', grupo: TaskGroup.Build, argumentos: 'run --fast' },
+            { nombre: 'run-jit', etiqueta: 'Run (JIT)', grupo: TaskGroup.Build, argumentos: 'run --jit' },
+            { nombre: 'test', etiqueta: 'Run tests', grupo: TaskGroup.Test, argumentos: 'test' },
+            { nombre: 'build', etiqueta: 'Build bytecode', grupo: TaskGroup.Build, argumentos: 'build' },
+            { nombre: 'build-asm', etiqueta: 'Build to ASM', grupo: TaskGroup.Build, argumentos: 'build --asm' },
+            { nombre: 'build-wasm', etiqueta: 'Build to WASM', grupo: TaskGroup.Build, argumentos: 'build --target wasm32-unknown-unknown' },
         ];
 
-        for (const cfg of taskConfigs) {
-            const definition: ForjaTaskDefinition = {
+        for (const configuracion of configuracionesTarea) {
+            const definicion: DefinicionTareaForja = {
                 type: 'forja',
-                task: cfg.name,
+                task: configuracion.nombre,
             };
 
-            const task = new Task(
-                definition,
+            const tarea = new Task(
+                definicion,
                 TaskScope.Workspace,
-                `Forja: ${cfg.label}`,
+                `Forja: ${configuracion.etiqueta}`,
                 'forja',
                 new CustomExecution(
                     async (): Promise<Pseudoterminal> => {
-                        return new ForjaPseudoterminal(`forja ${cfg.cmdArgs} "${filePath}"`);
+                        return new PseudoterminalForja(`forja ${configuracion.argumentos} "${rutaArchivo}"`);
                     }
                 ),
                 '$(zap)',
             );
-            task.group = cfg.group;
+            tarea.group = configuracion.grupo;
 
-            tasks.push(task);
+            tareas.push(tarea);
         }
 
-        return tasks;
+        return tareas;
     }
 
-    resolveTask(_task: Task): Task | undefined {
-        return _task;
+    /**
+     * Devuelve la tarea ya resuelta (no requiere trabajo adicional).
+     *
+     * @param tarea Tarea tal como llegó desde VS Code.
+     * @returns La misma tarea.
+     */
+    resolveTask(tarea: Task): Task | undefined {
+        return tarea;
     }
 }
 
-class ForjaPseudoterminal implements Pseudoterminal {
-    private writeEmitter = new EventEmitter<string>();
-    private closeEmitter = new EventEmitter<void>();
+/**
+ * Pseudoterminal que ejecuta una orden de la CLI y muestra su salida en el
+ * panel de tareas de VS Code.
+ */
+class PseudoterminalForja implements Pseudoterminal {
+    /** Emisor de la salida de texto que se pinta en el panel. */
+    private emisorEscritura = new EventEmitter<string>();
+    /** Emisor que señala el cierre del proceso. */
+    private emisorCierre = new EventEmitter<void>();
 
-    readonly onDidWrite = this.writeEmitter.event;
-    readonly onDidClose = this.closeEmitter.event;
+    /** Evento al que se suscribe VS Code para escribir la salida. */
+    readonly onDidWrite = this.emisorEscritura.event;
+    /** Evento al que se suscribe VS Code para cerrar el panel. */
+    readonly onDidClose = this.emisorCierre.event;
 
-    constructor(private command: string) { }
+    /**
+     * @param comando Línea de órdenes completa que se ejecutará al abrirse el panel.
+     */
+    constructor(private comando: string) { }
 
-    open(_initialDimensions: any): void {
-        this.writeEmitter.fire(`Ejecutando: ${this.command}\r\n\r\n`);
-        const child = exec(this.command, {
+    /**
+     * Arranca el proceso y conecta su salida al panel.
+     *
+     * @param _dimensionesIniciales Dimensiones del panel (no se usan).
+     * @returns Nada.
+     */
+    open(_dimensionesIniciales: any): void {
+        this.emisorEscritura.fire(`Ejecutando: ${this.comando}\r\n\r\n`);
+        const hijo = exec(this.comando, {
             cwd: workspace.workspaceFolders?.[0]?.uri?.fsPath,
             windowsHide: true,
         });
 
-        child.stdout?.on('data', (data: string) => {
-            this.writeEmitter.fire(data);
+        hijo.stdout?.on('data', (datos: string) => {
+            this.emisorEscritura.fire(datos);
         });
 
-        child.stderr?.on('data', (data: string) => {
-            this.writeEmitter.fire(data);
+        hijo.stderr?.on('data', (datos: string) => {
+            this.emisorEscritura.fire(datos);
         });
 
-        child.on('close', (code: number) => {
-            this.writeEmitter.fire(`\r\nProceso terminado con código: ${code}\r\n`);
-            this.closeEmitter.fire();
+        hijo.on('close', (codigo: number) => {
+            this.emisorEscritura.fire(`\r\nProceso terminado con código: ${codigo}\r\n`);
+            this.emisorCierre.fire();
         });
 
-        child.on('error', (err: Error) => {
-            this.writeEmitter.fire(`\r\nError: ${err.message}\r\n`);
-            this.closeEmitter.fire();
+        hijo.on('error', (error: Error) => {
+            this.emisorEscritura.fire(`\r\nError: ${error.message}\r\n`);
+            this.emisorCierre.fire();
         });
     }
 
+    /**
+     * Cierra el panel. No requiere limpieza: el proceso hijo ya se gestiona solo.
+     *
+     * @returns Nada.
+     */
     close(): void {
-        // no-op
+        // Sin operación: el cierre del proceso dispara `emisorCierre`.
     }
 }
 
 // ======================================================================
-// Utility
+// Utilidades del sistema
 // ======================================================================
 
-function findOnPath(binaryName: string): string | undefined {
-    const isWindows = process.platform === 'win32';
-    const exeName = isWindows ? `${binaryName}.exe` : binaryName;
-    const pathDirs = (process.env.PATH || '').split(path.delimiter);
+/**
+ * Busca un ejecutable en los directorios del `PATH`.
+ *
+ * En Windows añade la extensión `.exe` al nombre buscado.
+ *
+ * @param nombreBinario Nombre del ejecutable sin extensión.
+ * @returns Ruta absoluta del primer ejecutable encontrado, o `undefined`.
+ */
+function buscarEnRuta(nombreBinario: string): string | undefined {
+    const esWindows = process.platform === 'win32';
+    const nombreEjecutable = esWindows ? `${nombreBinario}.exe` : nombreBinario;
+    const directoriosRuta = (process.env.PATH || '').split(path.delimiter);
 
-    for (const dir of pathDirs) {
+    for (const directorio of directoriosRuta) {
         try {
-            const fullPath = path.join(dir, exeName);
-            if (fs.existsSync(fullPath)) {
-                return fullPath;
+            const rutaCompleta = path.join(directorio, nombreEjecutable);
+            if (fs.existsSync(rutaCompleta)) {
+                return rutaCompleta;
             }
         } catch {
             continue;

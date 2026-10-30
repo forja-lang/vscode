@@ -1,59 +1,92 @@
-// Forja Diagram Viewer — Webview v7
-// Renderiza diagramas de flujo nativos en formato Mermaid estándar con Zoom y Pan
+/**
+ * Visor de diagramas de flujo de Forja.
+ *
+ * Toma el código Forja del editor activo, invoca `forja diagram` para obtener
+ * el grafo en formato Mermaid y lo renderiza dentro de un panel webview con
+ * zoom, desplazamiento (pan) y exportación a SVG.
+ */
 
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { spawn } from 'child_process';
 
-export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
-    public static readonly viewType = 'forja.diagram';
-    private _view?: vscode.WebviewView;
-    private _isReady = false;
-    private _lastCode?: string;
+/**
+ * Proveedor del panel webview que muestra el diagrama del archivo activo.
+ *
+ * Mantiene una única vista, recuerda el último diagrama generado para poder
+ * repintarlo cuando la webview termina de cargar y evita regenerar el grafo si
+ * el código no cambió.
+ */
+export class ProveedorDiagramaForja implements vscode.WebviewViewProvider {
+    /** Identificador de vista que debe coincidir con el declarado en `package.json`. */
+    public static readonly tipoVista = 'forja.diagram';
 
-    constructor(private readonly _extensionUri: vscode.Uri) { }
+    /** Vista webview una vez resuelta por VS Code. */
+    private _vista?: vscode.WebviewView;
 
+    /** Indica si el documento de la webview terminó de cargar y puede recibir mensajes. */
+    private _estaLista = false;
+
+    /** Último código Mermaid generado, pendiente de pintar. */
+    private _ultimoCodigo?: string;
+
+    /**
+     * @param _uriExtension URI raíz de la extensión, usada para resolver los recursos de `media/`.
+     */
+    constructor(private readonly _uriExtension: vscode.Uri) { }
+
+    /**
+     * Inicializa la webview cuando VS Code resuelve la vista.
+     *
+     * Configura los recursos locales permitidos, inyecta el HTML con Mermaid y
+     * atiende los mensajes que llegan desde el panel (listo, exportar SVG).
+     *
+     * @param vistaWebview Vista que aporta VS Code.
+     * @param _contexto Contexto de resolución de la vista (no se usa).
+     * @param _token Token de cancelación (no se usa).
+     * @returns Nada.
+     */
     resolveWebviewView(
-        webviewView: vscode.WebviewView,
-        _context: vscode.WebviewViewResolveContext,
+        vistaWebview: vscode.WebviewView,
+        _contexto: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken
     ): void {
-        this._view = webviewView;
+        this._vista = vistaWebview;
 
-        webviewView.webview.options = {
+        vistaWebview.webview.options = {
             enableScripts: true,
-            localResourceRoots: [this._extensionUri],
+            localResourceRoots: [this._uriExtension],
         };
 
-        const mediaPath = vscode.Uri.joinPath(this._extensionUri, 'media');
-        const mermaidUri = webviewView.webview.asWebviewUri(vscode.Uri.joinPath(mediaPath, 'mermaid.min.js'));
+        const rutaMedia = vscode.Uri.joinPath(this._uriExtension, 'media');
+        const uriMermaid = vistaWebview.webview.asWebviewUri(vscode.Uri.joinPath(rutaMedia, 'mermaid.min.js'));
 
-        webviewView.webview.html = this._getHtml(mermaidUri);
+        vistaWebview.webview.html = this._obtenerHtml(uriMermaid);
 
-        // Escuchar mensajes desde la webview (por ejemplo, para exportar o cuando esté lista)
-        webviewView.webview.onDidReceiveMessage(async (msg) => {
-            switch (msg.type) {
+        // Mensajes que envía la webview: aviso de carga y petición de exportación.
+        vistaWebview.webview.onDidReceiveMessage(async (mensaje) => {
+            switch (mensaje.type) {
                 case 'ready': {
-                    this._isReady = true;
-                    if (this._lastCode) {
-                        this._view?.webview.postMessage({
+                    this._estaLista = true;
+                    if (this._ultimoCodigo) {
+                        this._vista?.webview.postMessage({
                             type: 'renderMermaid',
-                            code: this._lastCode
+                            code: this._ultimoCodigo
                         });
                     } else {
-                        this.updateActiveDiagram();
+                        this.actualizarDiagramaActivo();
                     }
                     break;
                 }
                 case 'exportSvg': {
-                    const svgContent = msg.svg;
+                    const contenidoSvg = mensaje.svg;
                     const uri = await vscode.window.showSaveDialog({
                         filters: { 'SVG Image': ['svg'] },
                         defaultUri: vscode.Uri.file('diagrama.svg'),
                     });
                     if (uri) {
-                        fs.writeFileSync(uri.fsPath, svgContent, 'utf-8');
+                        fs.writeFileSync(uri.fsPath, contenidoSvg, 'utf-8');
                         vscode.window.showInformationMessage(`Diagrama guardado en: ${uri.fsPath}`);
                     }
                     break;
@@ -62,97 +95,125 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
         });
     }
 
-    public async updateActiveDiagram() {
-        if (!this._view) return;
+    /**
+     * Regenera el diagrama a partir del editor activo.
+     *
+     * Si no hay editor o el archivo no es Forja, o si el archivo está vacío,
+     * muestra un estado vacío en el panel en lugar de un diagrama.
+     *
+     * @returns Promesa que se resuelve cuando se envió la orden de generación.
+     */
+    public async actualizarDiagramaActivo() {
+        if (!this._vista) return;
 
         const editor = vscode.window.activeTextEditor;
         if (!editor || editor.document.languageId !== 'forja') {
-            this._lastCode = undefined;
-            this._view.webview.postMessage({
+            this._ultimoCodigo = undefined;
+            this._vista.webview.postMessage({
                 type: 'emptyState',
                 message: 'Abre un archivo Forja (.fa) para ver su diagrama'
             });
             return;
         }
 
-        const source = editor.document.getText();
-        if (!source.trim()) {
-            this._lastCode = undefined;
-            this._view.webview.postMessage({
+        const fuente = editor.document.getText();
+        if (!fuente.trim()) {
+            this._ultimoCodigo = undefined;
+            this._vista.webview.postMessage({
                 type: 'emptyState',
                 message: 'El archivo Forja actual está vacío'
             });
             return;
         }
 
-        await this._generateDiagram(source);
+        await this._generarDiagrama(fuente);
     }
 
-    private async _generateDiagram(source: string) {
-        if (!this._view) return;
+    /**
+     * Invoca `forja diagram` sobre el código fuente y envía el Mermaid al panel.
+     *
+     * Escribe el código en un archivo temporal `.fa`, ejecuta la CLI con salida
+     * a un `.mmd` temporal y borra ambos archivos al terminar. Si la CLI falla,
+     * envía el mensaje de error a la webview.
+     *
+     * @param fuente Código Forja del que se genera el diagrama.
+     * @returns Promesa que se resuelve cuando el proceso hijo terminó.
+     */
+    private async _generarDiagrama(fuente: string) {
+        if (!this._vista) return;
 
-        const cmd = vscode.workspace.getConfiguration('forja').get<string>('diagram.command', 'forja');
+        const comando = vscode.workspace.getConfiguration('forja').get<string>('diagram.command', 'forja');
 
-        // Rutas temporales para la generación del diagrama
-        const extensionDir = path.join(this._extensionUri.fsPath);
-        const tmpFile = path.join(extensionDir, '.diagram_temp.fa');
-        const mmdFile = path.join(extensionDir, '.diagram_temp.mmd');
+        // Archivos temporales donde se vuelca el código y el Mermaid resultante.
+        const directorioExtension = path.join(this._uriExtension.fsPath);
+        const archivoTemporal = path.join(directorioExtension, '.diagram_temp.fa');
+        const archivoMmd = path.join(directorioExtension, '.diagram_temp.mmd');
 
         try {
-            fs.writeFileSync(tmpFile, source, 'utf-8');
+            fs.writeFileSync(archivoTemporal, fuente, 'utf-8');
 
-            const child = spawn(cmd, ['diagram', tmpFile, '-o', mmdFile], {
+            const hijo = spawn(comando, ['diagram', archivoTemporal, '-o', archivoMmd], {
                 windowsHide: true,
                 shell: true,
             });
 
-            let err = '';
-            child.stderr?.on('data', (data: Buffer) => {
-                err += data.toString();
+            let error = '';
+            hijo.stderr?.on('data', (datos: Buffer) => {
+                error += datos.toString();
             });
 
-            child.on('close', (code) => {
-                // Eliminar archivo .fa temporal
-                try { fs.unlinkSync(tmpFile); } catch { }
+            hijo.on('close', (codigo) => {
+                // Eliminar el archivo .fa temporal.
+                try { fs.unlinkSync(archivoTemporal); } catch { }
 
-                if (code === 0 && fs.existsSync(mmdFile)) {
-                    let mmdContent = fs.readFileSync(mmdFile, 'utf-8');
+                if (codigo === 0 && fs.existsSync(archivoMmd)) {
+                    let contenidoMmd = fs.readFileSync(archivoMmd, 'utf-8');
 
-                    // Eliminar el archivo MMD generado temporalmente
-                    try { fs.unlinkSync(mmdFile); } catch { }
+                    // Eliminar el archivo MMD generado temporalmente.
+                    try { fs.unlinkSync(archivoMmd); } catch { }
 
-                    this._lastCode = mmdContent;
+                    this._ultimoCodigo = contenidoMmd;
 
-                    // Enviar la sintaxis Mermaid a la webview si ya está lista
-                    if (this._isReady) {
-                        this._view!.webview.postMessage({
+                    // Enviar la sintaxis Mermaid a la webview si ya está lista.
+                    if (this._estaLista) {
+                        this._vista!.webview.postMessage({
                             type: 'renderMermaid',
-                            code: mmdContent
+                            code: contenidoMmd
                         });
                     }
                 } else {
-                    this._view!.webview.postMessage({
+                    this._vista!.webview.postMessage({
                         type: 'error',
-                        message: `Error al generar diagrama: ${err || 'Proceso falló'}`
+                        message: `Error al generar diagrama: ${error || 'Proceso falló'}`
                     });
                 }
             });
-        } catch (e: any) {
-            this._view.webview.postMessage({
+        } catch (excepcion: any) {
+            this._vista.webview.postMessage({
                 type: 'error',
-                message: `Error: ${e.message}`
+                message: `Error: ${excepcion.message}`
             });
         }
     }
 
-    private _getHtml(mermaidUri: vscode.Uri): string {
+    /**
+     * Construye el documento HTML del panel.
+     *
+     * Incluye la hoja de estilos, la botonera, el contenedor del diagrama y el
+     * script de la webview que implementa el renderizado con Mermaid, el zoom
+     * con la rueda, el arrastre para desplazar y la exportación a SVG.
+     *
+     * @param uriMermaid URI resuelta de `media/mermaid.min.js`.
+     * @returns Documento HTML completo.
+     */
+    private _obtenerHtml(uriMermaid: vscode.Uri): string {
         return `<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- Carga de Mermaid.js para renderizado nativo en la Webview -->
-<script src="${mermaidUri}"></script>
+<!-- Carga de Mermaid.js para el renderizado nativo dentro de la webview -->
+<script src="${uriMermaid}"></script>
 <style>
     body {
         margin: 0;
@@ -270,145 +331,146 @@ export class ForjaDiagramProvider implements vscode.WebviewViewProvider {
 
 <script>
     const vscode = acquireVsCodeApi();
-    const container = document.getElementById('container');
-    const wrapper = document.getElementById('zoom-wrapper');
-    const btnReset = document.getElementById('btnReset');
-    const btnExport = document.getElementById('btnExport');
+    const contenedor = document.getElementById('container');
+    const envoltorio = document.getElementById('zoom-wrapper');
+    const botonReiniciar = document.getElementById('btnReset');
+    const botonExportar = document.getElementById('btnExport');
 
-    // Inicializar Mermaid
+    // Inicializar Mermaid en modo oscuro y sin carga automática.
     mermaid.initialize({
         startOnLoad: false,
         theme: 'dark',
         securityLevel: 'loose'
     });
 
-    let scale = 1.0;
-    let translateX = 0;
-    let translateY = 0;
-    let isDragging = false;
-    let startX = 0;
-    let startY = 0;
+    let escala = 1.0;
+    let desplazamientoX = 0;
+    let desplazamientoY = 0;
+    let arrastrando = false;
+    let inicioX = 0;
+    let inicioY = 0;
 
-    const updateTransform = () => {
-        wrapper.style.transform = \`translate(\${translateX}px, \${translateY}px) scale(\${scale})\`;
+    // Aplica la traslación y la escala actuales al envoltorio del diagrama.
+    const actualizarTransformacion = () => {
+        envoltorio.style.transform = \`translate(\${desplazamientoX}px, \${desplazamientoY}px) scale(\${escala})\`;
     };
 
-    // Pan (arrastrar)
-    container.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return; // Solo click izquierdo
-        isDragging = true;
-        startX = e.clientX - translateX;
-        startY = e.clientY - translateY;
-        e.preventDefault();
+    // ── Desplazamiento (arrastrar) ──
+    contenedor.addEventListener('mousedown', (evento) => {
+        if (evento.button !== 0) return; // Solo click izquierdo.
+        arrastrando = true;
+        inicioX = evento.clientX - desplazamientoX;
+        inicioY = evento.clientY - desplazamientoY;
+        evento.preventDefault();
     });
 
-    window.addEventListener('mousemove', (e) => {
-        if (!isDragging) return;
-        translateX = e.clientX - startX;
-        translateY = e.clientY - startY;
-        updateTransform();
+    window.addEventListener('mousemove', (evento) => {
+        if (!arrastrando) return;
+        desplazamientoX = evento.clientX - inicioX;
+        desplazamientoY = evento.clientY - inicioY;
+        actualizarTransformacion();
     });
 
     window.addEventListener('mouseup', () => {
-        isDragging = false;
+        arrastrando = false;
     });
 
     window.addEventListener('mouseleave', () => {
-        isDragging = false;
+        arrastrando = false;
     });
 
     window.addEventListener('blur', () => {
-        isDragging = false;
+        arrastrando = false;
     });
 
-    // Zoom (rueda mouse)
-    container.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        const zoomFactor = 1.08;
-        const rect = container.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+    // ── Zoom con la rueda del ratón, anclado al puntero ──
+    contenedor.addEventListener('wheel', (evento) => {
+        evento.preventDefault();
+        const factorZoom = 1.08;
+        const rectangulo = contenedor.getBoundingClientRect();
+        const ratonX = evento.clientX - rectangulo.left;
+        const ratonY = evento.clientY - rectangulo.top;
 
-        const contentX = (mouseX - translateX) / scale;
-        const contentY = (mouseY - translateY) / scale;
+        const contenidoX = (ratonX - desplazamientoX) / escala;
+        const contenidoY = (ratonY - desplazamientoY) / escala;
 
-        if (e.deltaY < 0) {
-            scale = Math.min(scale * zoomFactor, 1000.0);
+        if (evento.deltaY < 0) {
+            escala = Math.min(escala * factorZoom, 1000.0);
         } else {
-            scale = Math.max(scale / zoomFactor, 0.01);
+            escala = Math.max(escala / factorZoom, 0.01);
         }
 
-        translateX = mouseX - contentX * scale;
-        translateY = mouseY - contentY * scale;
+        desplazamientoX = ratonX - contenidoX * escala;
+        desplazamientoY = ratonY - contenidoY * escala;
 
-        updateTransform();
+        actualizarTransformacion();
     }, { passive: false });
 
-    // Resetear
-    btnReset.addEventListener('click', () => {
-        scale = 1.0;
-        translateX = 0;
-        translateY = 0;
-        updateTransform();
+    // ── Reiniciar la vista a escala 1 y sin desplazamiento ──
+    botonReiniciar.addEventListener('click', () => {
+        escala = 1.0;
+        desplazamientoX = 0;
+        desplazamientoY = 0;
+        actualizarTransformacion();
     });
 
-    container.addEventListener('dblclick', () => {
-        scale = 1.0;
-        translateX = 0;
-        translateY = 0;
-        updateTransform();
+    contenedor.addEventListener('dblclick', () => {
+        escala = 1.0;
+        desplazamientoX = 0;
+        desplazamientoY = 0;
+        actualizarTransformacion();
     });
 
-    // Exportar
-    btnExport.addEventListener('click', () => {
-        const svgElement = wrapper.querySelector('svg');
-        if (svgElement) {
-            let svgContent = svgElement.outerHTML;
-            // Reemplazar <br> no cerrados por <br /> para cumplir con la especificación estricta de XML/SVG
-            svgContent = svgContent.replace(/<br(?!\s*\/)>/gi, '<br />');
+    // ── Exportar el SVG actual ──
+    botonExportar.addEventListener('click', () => {
+        const elementoSvg = envoltorio.querySelector('svg');
+        if (elementoSvg) {
+            let contenidoSvg = elementoSvg.outerHTML;
+            // Reemplazar <br> sin cerrar por <br /> para cumplir con la especificación XML/SVG.
+            contenidoSvg = contenidoSvg.replace(/<br(?!\s*\/)>/gi, '<br />');
             vscode.postMessage({
                 type: 'exportSvg',
-                svg: svgContent
+                svg: contenidoSvg
             });
         }
     });
 
-    // Escuchar mensajes desde la extensión
-    window.addEventListener('message', async (event) => {
-        const msg = event.data;
-        if (msg.type === 'renderMermaid') {
+    // ── Mensajes que llegan desde la extensión ──
+    window.addEventListener('message', async (evento) => {
+        const mensaje = evento.data;
+        if (mensaje.type === 'renderMermaid') {
             try {
-                // Renderizar código Mermaid usando un ID único cada vez
+                // Se usa un ID único para que Mermaid no reutilice el SVG anterior.
                 const id = 'mermaid-' + Date.now();
-                const { svg } = await mermaid.render(id, msg.code);
-                wrapper.innerHTML = svg;
+                const { svg } = await mermaid.render(id, mensaje.code);
+                envoltorio.innerHTML = svg;
                 
-                // Centrar automáticamente
-                scale = 1.0;
-                translateX = 0;
-                translateY = 0;
-                updateTransform();
-            } catch (err) {
-                wrapper.innerHTML = \`<div class="state-container">
+                // Centrar automáticamente el diagrama recién renderizado.
+                escala = 1.0;
+                desplazamientoX = 0;
+                desplazamientoY = 0;
+                actualizarTransformacion();
+            } catch (error) {
+                envoltorio.innerHTML = \`<div class="state-container">
                     <div class="state-icon" style="color: #f85149;">❌</div>
                     <div style="color: #f85149;">Error al renderizar</div>
-                    <div style="font-size: 0.85em; max-width: 300px; margin-top: 8px;">\${err.message || err}</div>
+                    <div style="font-size: 0.85em; max-width: 300px; margin-top: 8px;">\${error.message || error}</div>
                 </div>\`;
             }
-        } else if (msg.type === 'emptyState') {
-            wrapper.innerHTML = \`<div class="state-container">
+        } else if (mensaje.type === 'emptyState') {
+            envoltorio.innerHTML = \`<div class="state-container">
                 <div class="state-icon">📊</div>
-                <div>\${msg.message}</div>
+                <div>\${mensaje.message}</div>
             </div>\`;
-        } else if (msg.type === 'error') {
-            wrapper.innerHTML = \`<div class="state-container">
+        } else if (mensaje.type === 'error') {
+            envoltorio.innerHTML = \`<div class="state-container">
                 <div class="state-icon" style="color: #f85149;">⚠️</div>
-                <div style="color: #f85149;">\${msg.message}</div>
+                <div style="color: #f85149;">\${mensaje.message}</div>
             </div>\`;
         }
     });
 
-    // Indicar a la extensión que la webview está lista
+    // Avisar a la extensión de que la webview ya está lista para recibir datos.
     vscode.postMessage({ type: 'ready' });
 </script>
 </body>
