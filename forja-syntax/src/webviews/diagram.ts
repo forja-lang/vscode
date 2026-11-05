@@ -1,7 +1,7 @@
 /**
  * Visor de diagramas de flujo de Forja.
  *
- * Toma el código Forja del editor activo, invoca `forja diagram` para obtener
+ * Toma el código Forja del editor activo, invoca `forja diagrama` para obtener
  * el grafo en formato Mermaid y lo renderiza dentro de un panel webview con
  * zoom, desplazamiento (pan) y exportación a SVG.
  */
@@ -9,6 +9,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { spawn } from 'child_process';
 
 /**
@@ -130,11 +131,11 @@ export class ProveedorDiagramaForja implements vscode.WebviewViewProvider {
     }
 
     /**
-     * Invoca `forja diagram` sobre el código fuente y envía el Mermaid al panel.
+     * Invoca `forja diagrama` sobre el código fuente y envía el Mermaid al panel.
      *
-     * Escribe el código en un archivo temporal `.fa`, ejecuta la CLI con salida
-     * a un `.mmd` temporal y borra ambos archivos al terminar. Si la CLI falla,
-     * envía el mensaje de error a la webview.
+     * Escribe el código en un archivo temporal `.fa`, ejecuta la CLI (que deja
+     * el `.mmd` junto al fuente, porque no admite flags) y borra ambos archivos
+     * al terminar. Si la CLI falla, envía el mensaje de error a la webview.
      *
      * @param fuente Código Forja del que se genera el diagrama.
      * @returns Promesa que se resuelve cuando el proceso hijo terminó.
@@ -142,19 +143,21 @@ export class ProveedorDiagramaForja implements vscode.WebviewViewProvider {
     private async _generarDiagrama(fuente: string) {
         if (!this._vista) return;
 
-        const comando = vscode.workspace.getConfiguration('forja').get<string>('diagram.command', 'forja');
+        const comando = vscode.workspace.getConfiguration('forja').get<string>('command', 'forja') || 'forja';
 
         // Archivos temporales donde se vuelca el código y el Mermaid resultante.
-        const directorioExtension = path.join(this._uriExtension.fsPath);
-        const archivoTemporal = path.join(directorioExtension, '.diagram_temp.fa');
-        const archivoMmd = path.join(directorioExtension, '.diagram_temp.mmd');
+        const archivoTemporal = path.join(os.tmpdir(), `forja-diagrama-${process.pid}.fa`);
+        const archivoMmd = path.join(os.tmpdir(), `forja-diagrama-${process.pid}.mmd`);
 
         try {
             fs.writeFileSync(archivoTemporal, fuente, 'utf-8');
 
-            const hijo = spawn(comando, ['diagram', archivoTemporal, '-o', archivoMmd], {
+            const hijo = spawn(comando, ['diagrama', archivoTemporal], {
+                // La CLI lee `forja.yaml` del directorio de trabajo: usar el
+                // workspace (o el temporal) para no ensuciar el cwd del host.
+                cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.tmpdir(),
                 windowsHide: true,
-                shell: true,
+                shell: false,
             });
 
             let error = '';
