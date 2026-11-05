@@ -96,44 +96,48 @@ const NOMBRE_CANAL_SALIDA = 'Forja';
 /** Nombre de la terminal integrada dedicada a los comandos de Forja. */
 const NOMBRE_TERMINAL = 'Forja';
 
-/** Modos de máquina virtual que admite el ejecutable `forja`. */
-type ModoVM = 'fastvm' | 'vm' | 'jit';
+/**
+ * Motores de ejecución que admite `forja.yaml` (`motor`).
+ *
+ * La CLI no usa flags: el motor se elige en `forja.yaml`. `todas` existe solo
+ * para `medir` y no se ofrece en el selector.
+ */
+type Motor = 'rapido' | 'jit';
 
-/** Plataformas de compilación que admite el ejecutable `forja`. */
-type PlataformaObjetivo = 'native'
-    | 'x86_64-pc-windows-msvc'
-    | 'aarch64-linux-android'
-    | 'x86_64-linux-android'
-    | 'wasm32-unknown-unknown';
+/** Destinos que admite `forja.yaml` (`destino`). */
+type Destino = 'maquina' | 'ensamblador' | 'nativo';
 
-/** Lista ordenada de modos de VM disponibles para el selector rápido. */
-const MODOS_VM: ModoVM[] = ['fastvm', 'vm', 'jit'];
+/** Motores disponibles para el selector rápido. */
+const MOTORES: Motor[] = ['rapido', 'jit'];
 
-/** Lista ordenada de plataformas objetivo disponibles para el selector rápido. */
-const PLATAFORMAS: PlataformaObjetivo[] = ['native', 'x86_64-pc-windows-msvc', 'aarch64-linux-android', 'x86_64-linux-android', 'wasm32-unknown-unknown'];
+/** Destinos disponibles para el selector rápido. */
+const DESTINOS: Destino[] = ['maquina', 'ensamblador', 'nativo'];
 
-/** Etiqueta legible que se muestra en la barra de estado para cada modo de VM. */
-const ETIQUETAS_VM: Record<ModoVM, string> = {
-    'fastvm': 'FastVM',
-    'vm': 'VM Clásica',
-    'jit': 'JIT Nativo',
+/** Etiqueta legible que se muestra en la barra de estado para cada motor. */
+const ETIQUETAS_MOTOR: Record<Motor, string> = {
+    'rapido': 'ForjaFast',
+    'jit': 'JIT',
 };
 
-/** Iconos codicon que acompañan a cada modo de VM en la interfaz. */
-const ICONOS_VM: Record<ModoVM, string> = {
-    'fastvm': '$(zap)',
-    'vm': '$(vm)',
+/** Iconos codicon que acompañan a cada motor en la interfaz. */
+const ICONOS_MOTOR: Record<Motor, string> = {
+    'rapido': '$(zap)',
     'jit': '$(rocket)',
+};
+
+/** Etiqueta legible del destino de ejecución. */
+const ETIQUETAS_DESTINO: Record<Destino, string> = {
+    'maquina': 'Máquina',
+    'ensamblador': 'ASM',
+    'nativo': 'Nativo (GUI)',
 };
 
 /** Identificadores internos de las tareas que puede ejecutar la extensión. */
 type NombreTarea =
-    | 'run' | 'run-fast' | 'run-jit' | 'run-aot'
-    | 'debug' | 'gui'
-    | 'build' | 'build-asm' | 'build-wasm' | 'build-android'
+    | 'run' | 'debug'
+    | 'build' | 'build-asm'
     | 'test' | 'bench'
-    | 'fmt' | 'doc' | 'diagram' | 'transpile'
-    | 'gui-hot-reload';
+    | 'fmt' | 'doc' | 'diagram' | 'transpile';
 
 // ======================================================================
 // Estado
@@ -148,17 +152,17 @@ let canalSalida: OutputChannel;
 /** Terminal integrada reutilizable; `undefined` cuando no existe todavía. */
 let terminalForja: Terminal | undefined;
 
-/** Indicador de la barra de estado con el modo de VM activo. */
+/** Indicador de la barra de estado con el motor activo. */
 let barraEstadoVM: StatusBarItem;
 
-/** Indicador de la barra de estado con la plataforma objetivo activa. */
+/** Indicador de la barra de estado con el destino activo. */
 let barraEstadoObjetivo: StatusBarItem;
 
-/** Modo de VM seleccionado actualmente. */
-let modoVMActual: ModoVM = 'fastvm';
+/** Motor leído de `forja.yaml`. */
+let motorActual: Motor = 'rapido';
 
-/** Plataforma objetivo seleccionada actualmente. */
-let objetivoActual: PlataformaObjetivo = 'native';
+/** Destino leído de `forja.yaml`. */
+let destinoActual: Destino = 'maquina';
 
 // ======================================================================
 // Ciclo de vida de la extensión
@@ -179,10 +183,9 @@ export function activate(contexto: ExtensionContext) {
     canalSalida = window.createOutputChannel(NOMBRE_CANAL_SALIDA, 'forja');
     canalSalida.appendLine('Extensión Forja activada');
 
-    // ── Carga de la configuración del usuario ──
-    modoVMActual = workspace.getConfiguration('forja').get<ModoVM>('defaultVM', 'fastvm');
-    objetivoActual = workspace.getConfiguration('forja').get<PlataformaObjetivo>('defaultTarget', 'native');
+    // ── Configuración real: `forja.yaml` (la CLI no usa flags) ──
     recargaCalienteActiva = workspace.getConfiguration('forja').get<boolean>('hotReload.enabled', true);
+    refrescarConfigForja();
 
     // ── Resaltado sintáctico propio ──
     configurarResaltadoForja(contexto);
@@ -190,17 +193,24 @@ export function activate(contexto: ExtensionContext) {
     // ── Cliente LSP ──
     iniciarClienteLsp(contexto);
 
-    // ── Barra de estado: selector de VM ──
+    // ── Barra de estado: selector de motor ──
     barraEstadoVM = window.createStatusBarItem(StatusBarAlignment.Left, 100);
     barraEstadoVM.command = 'forja.selectVM';
-    barraEstadoVM.tooltip = 'Haz clic para cambiar la VM por defecto';
+    barraEstadoVM.tooltip = 'motor de forja.yaml — clic para cambiarlo';
     contexto.subscriptions.push(barraEstadoVM);
 
-    // ── Barra de estado: selector de plataforma objetivo ──
+    // ── Barra de estado: selector de destino ──
     barraEstadoObjetivo = window.createStatusBarItem(StatusBarAlignment.Left, 99);
     barraEstadoObjetivo.command = 'forja.selectTarget';
-    barraEstadoObjetivo.tooltip = 'Haz clic para cambiar la plataforma target';
+    barraEstadoObjetivo.tooltip = 'destino de forja.yaml — clic para cambiarlo';
     contexto.subscriptions.push(barraEstadoObjetivo);
+
+    // ── forja.yaml: releer cuando el archivo cambia (dentro o fuera del editor) ──
+    const vigilanteConfig = workspace.createFileSystemWatcher('**/forja.yaml');
+    vigilanteConfig.onDidCreate(() => refrescarConfigForja());
+    vigilanteConfig.onDidChange(() => refrescarConfigForja());
+    vigilanteConfig.onDidDelete(() => refrescarConfigForja());
+    contexto.subscriptions.push(vigilanteConfig);
 
     // ── Registro de todos los comandos ──
     registrarComandos(contexto);
@@ -241,6 +251,9 @@ export function activate(contexto: ExtensionContext) {
     // ── Recarga en caliente al guardar un archivo ──
     contexto.subscriptions.push(
         workspace.onDidSaveTextDocument(async (documento) => {
+            if (path.basename(documento.fileName) === 'forja.yaml') {
+                refrescarConfigForja();
+            }
             if (documento.languageId === 'forja') {
                 proveedorDiagrama.actualizarDiagramaActivo();
             }
@@ -667,26 +680,13 @@ function iniciarClienteLsp(contexto: ExtensionContext) {
     // Resolución de la ruta del servidor: configuración explícita o autodetección.
     let rutaServidor = workspace.getConfiguration('forja').get<string>('lsp.path', '');
     if (!rutaServidor) {
-        // Primero el binario de desarrollo del proyecto.
-        const rutaRelativa = contexto.asAbsolutePath(path.join('..', 'target', 'debug', 'forja-lsp.exe'));
-        if (fs.existsSync(rutaRelativa)) {
-            rutaServidor = rutaRelativa;
-        } else {
-            // Después el binario de release.
-            const rutaRelativaRelease = contexto.asAbsolutePath(path.join('..', 'target', 'release', 'forja-lsp.exe'));
-            if (fs.existsSync(rutaRelativaRelease)) {
-                rutaServidor = rutaRelativaRelease;
-            } else {
-                // Por último, el PATH del sistema.
-                const resultadoBusqueda = buscarEnRuta('forja-lsp');
-                if (resultadoBusqueda) {
-                    rutaServidor = resultadoBusqueda;
-                } else {
-                    canalSalida.appendLine('forja-lsp no encontrado. LSP deshabilitado.');
-                    return;
-                }
-            }
-        }
+        rutaServidor = buscarBinario('forja-lsp') ?? '';
+    }
+    if (!rutaServidor) {
+        canalSalida.appendLine(
+            'forja-lsp no encontrado (compilá con `cargo build --features lsp`). LSP deshabilitado.'
+        );
+        return;
     }
 
     const opcionesServidor = {
@@ -730,11 +730,11 @@ interface ElementoBarraHerramientas {
 
 /** Elementos de la barra de herramientas; se completan durante la activación. */
 let elementosBarraHerramientas: ElementoBarraHerramientas[] = [
-    { id: 'runFast', texto: '$(zap) Ejecutar', comando: 'forja.runFast', ayuda: 'Ejecutar con FastVM', prioridad: 105 },
+    { id: 'run', texto: '$(play) Ejecutar', comando: 'forja.run', ayuda: 'Ejecutar con el motor y destino de forja.yaml', prioridad: 105 },
     { id: 'runDebug', texto: '$(bug) Debug', comando: 'forja.runDebug', ayuda: 'Iniciar depuración (DAP)', prioridad: 104 },
     { id: 'hotReload', texto: '$(sync) Reload', comando: 'forja.hotReload', ayuda: 'Recarga en caliente (Hot Reload)', prioridad: 103 },
     { id: 'hotRestart', texto: '$(refresh) Restart', comando: 'forja.hotRestart', ayuda: 'Reinicio en caliente (Hot Restart)', prioridad: 102 },
-    { id: 'runAOT', texto: '$(tools) AOT', comando: 'forja.runAOT', ayuda: 'Compilar AOT y ejecutar', prioridad: 101 },
+    { id: 'build', texto: '$(gear) Compilar', comando: 'forja.build', ayuda: 'Compilar a ejecutable', prioridad: 101 },
     { id: 'buildAndroid', texto: '$(device-mobile) Android', comando: 'forja.buildAndroid', ayuda: 'Compilar para Android', prioridad: 100 },
 ];
 
@@ -763,20 +763,18 @@ function actualizarVisibilidadBarraHerramientas() {
 /**
  * Refresca la barra de estado completa.
  *
- * Actualiza el modo de VM, la plataforma objetivo y el indicador de recarga
- * en caliente.
+ * Actualiza el motor y el destino leídos de `forja.yaml` y el indicador de
+ * recarga en caliente.
  *
  * @returns Nada.
  */
 function actualizarBarraEstado() {
-    barraEstadoVM.text = `${ICONOS_VM[modoVMActual]} ${ETIQUETAS_VM[modoVMActual]}`;
+    barraEstadoVM.text = `${ICONOS_MOTOR[motorActual]} ${ETIQUETAS_MOTOR[motorActual]}`;
+    barraEstadoVM.tooltip = `motor: ${motorActual} en forja.yaml — clic para cambiarlo`;
     barraEstadoVM.show();
 
-    const etiquetaObjetivo = objetivoActual === 'native' ? 'Nativo'
-        : objetivoActual === 'wasm32-unknown-unknown' ? 'WASM'
-            : objetivoActual.includes('android') ? 'Android'
-                : objetivoActual;
-    barraEstadoObjetivo.text = `$(target) ${etiquetaObjetivo}`;
+    barraEstadoObjetivo.text = `$(target) ${ETIQUETAS_DESTINO[destinoActual]}`;
+    barraEstadoObjetivo.tooltip = `destino: ${destinoActual} en forja.yaml — clic para cambiarlo`;
     barraEstadoObjetivo.show();
 
     // Indicador de recarga en caliente: apagado, procesos vivos o en espera.
@@ -801,39 +799,29 @@ function actualizarBarraEstado() {
  * Registra todos los comandos que aporta la extensión.
  *
  * Agrupa ejecución, compilación, cross-compilación a Android, pruebas,
- * herramientas, recarga en caliente, creación de proyectos y selectores de
- * VM/plataforma. Cada comando se añade a las suscripciones para liberarlo al
- * desactivar la extensión.
+ * herramientas, recarga en caliente, creación de proyectos y los selectores
+ * de motor/destino (que escriben en `forja.yaml`). Cada comando se añade a las
+ * suscripciones para liberarlo al desactivar la extensión.
  *
  * @param contexto Contexto de la extensión donde se registran los comandos.
  * @returns Nada.
  */
 function registrarComandos(contexto: ExtensionContext) {
     // ── Comandos de ejecución ──
+    // La CLI no usa flags: motor y destino salen de `forja.yaml`.
 
-    // Ejecutar con la VM original.
     const comandoEjecutar = commands.registerCommand('forja.run', () => {
-        ejecutarOrden('run', ['run']);
+        ejecutarOrden('run', ['ejecutar']);
     });
     contexto.subscriptions.push(comandoEjecutar);
 
-    // Ejecutar con FastVM.
-    const comandoEjecutarRapido = commands.registerCommand('forja.runFast', () => {
-        ejecutarOrden('run', ['run', '--fast']);
+    // Abrir la consola interactiva (REPL) en la terminal de Forja.
+    const comandoRepl = commands.registerCommand('forja.runRepl', () => {
+        const terminal = obtenerOCrearTerminal();
+        terminal.sendText(`${comandoForja()} repl`);
+        terminal.show();
     });
-    contexto.subscriptions.push(comandoEjecutarRapido);
-
-    // Ejecutar con JIT.
-    const comandoEjecutarJit = commands.registerCommand('forja.runJIT', () => {
-        ejecutarOrden('run', ['run', '--jit']);
-    });
-    contexto.subscriptions.push(comandoEjecutarJit);
-
-    // Ejecutar con AOT (LLVM).
-    const comandoEjecutarAot = commands.registerCommand('forja.runAOT', () => {
-        ejecutarOrden('run', ['run', '--aot']);
-    });
-    contexto.subscriptions.push(comandoEjecutarAot);
+    contexto.subscriptions.push(comandoRepl);
 
     // Depurar el archivo activo mediante DAP (no por terminal).
     const comandoDepurar = commands.registerCommand('forja.runDebug', () => {
@@ -855,11 +843,28 @@ function registrarComandos(contexto: ExtensionContext) {
     });
     contexto.subscriptions.push(comandoDepurar);
 
-    // Ejecutar con interfaz gráfica.
-    const comandoEjecutarGui = commands.registerCommand('forja.runGUI', () => {
-        ejecutarOrden('run', ['run', '--gui']);
+    // Ejecutar en modo nativo/GUI (`destino: nativo` en forja.yaml).
+    const comandoEjecutarNativo = commands.registerCommand('forja.runNative', async () => {
+        const cambio = destinoActual !== 'nativo';
+        if (cambio) {
+            escribirClaveForja('destino', 'nativo');
+            refrescarConfigForja();
+            canalSalida.appendLine('forja.yaml: destino → nativo');
+        }
+        // Se encola en la terminal antes de ofrecer revertir el cambio.
+        ejecutarOrden('run', ['ejecutar']);
+        if (cambio) {
+            const volver = await window.showInformationMessage(
+                'forja.yaml: destino cambiado a nativo (apps GUI). Los programas de consola necesitan destino: maquina.',
+                'Volver a maquina'
+            );
+            if (volver === 'Volver a maquina') {
+                escribirClaveForja('destino', 'maquina');
+                refrescarConfigForja();
+            }
+        }
     });
-    contexto.subscriptions.push(comandoEjecutarGui);
+    contexto.subscriptions.push(comandoEjecutarNativo);
 
     // Abrir el panel lateral de diagramas.
     const comandoAbrirDiagrama = commands.registerCommand('forja.openDiagram', () => {
@@ -877,21 +882,15 @@ function registrarComandos(contexto: ExtensionContext) {
 
     // Compilar a bytecode.
     const comandoCompilar = commands.registerCommand('forja.build', () => {
-        ejecutarOrden('build', ['build']);
+        ejecutarOrden('build', ['compilar']);
     });
     contexto.subscriptions.push(comandoCompilar);
 
-    // Compilar a ensamblador.
+    // Compilar a assembly nativo (la arquitectura sale de `arquitectura` en forja.yaml).
     const comandoCompilarAsm = commands.registerCommand('forja.buildASM', () => {
-        ejecutarOrden('build-asm', ['build', '--asm']);
+        ejecutarOrden('build-asm', ['asm']);
     });
     contexto.subscriptions.push(comandoCompilarAsm);
-
-    // Compilar a WebAssembly.
-    const comandoCompilarWasm = commands.registerCommand('forja.buildWASM', () => {
-        ejecutarOrden('build-wasm', ['build', '--target', 'wasm32-unknown-unknown']);
-    });
-    contexto.subscriptions.push(comandoCompilarWasm);
 
     // ── Cross-compilación a Android ──
 
@@ -903,13 +902,16 @@ function registrarComandos(contexto: ExtensionContext) {
      * @returns Nada.
      */
     function ejecutarScriptAndroid(script: string, argumentos: string[] = []) {
-        const rutaScript = path.join(contexto.extensionPath, 'scripts', script);
-        if (!fs.existsSync(rutaScript)) {
-            window.showErrorMessage(`Script no encontrado: ${rutaScript}`);
+        const repo = rutaRepo();
+        const rutaScript = repo ? path.join(repo, 'scripts', script) : '';
+        if (!rutaScript || !fs.existsSync(rutaScript)) {
+            window.showErrorMessage(
+                `Script no encontrado: ${rutaScript || `${script} (no encontré el checkout de Forja)`}`
+            );
             return;
         }
         const comando = `bash "${rutaScript}"${argumentos.length > 0 ? ' ' + argumentos.join(' ') : ''}`;
-        const terminal = window.createTerminal({ name: 'Forja Android', cwd: contexto.extensionPath });
+        const terminal = window.createTerminal({ name: 'Forja Android', cwd: repo });
         terminal.sendText(comando);
         terminal.show();
     }
@@ -1001,7 +1003,7 @@ function registrarComandos(contexto: ExtensionContext) {
     contexto.subscriptions.push(comandoPruebas);
 
     const comandoBenchmark = commands.registerCommand('forja.bench', () => {
-        ejecutarOrden('bench', ['bench']);
+        ejecutarOrden('bench', ['medir']);
     });
     contexto.subscriptions.push(comandoBenchmark);
 
@@ -1009,27 +1011,35 @@ function registrarComandos(contexto: ExtensionContext) {
 
     // Formatear el archivo activo.
     const comandoFormatear = commands.registerCommand('forja.fmt', () => {
-        ejecutarOrden('fmt', ['fmt']);
+        ejecutarOrden('fmt', ['formatear']);
     });
     contexto.subscriptions.push(comandoFormatear);
 
     // Generar documentación.
     const comandoDocumentar = commands.registerCommand('forja.doc', () => {
-        ejecutarOrden('doc', ['doc']);
+        ejecutarOrden('doc', ['documentar']);
     });
     contexto.subscriptions.push(comandoDocumentar);
 
-    // Generar el diagrama de flujo.
+    // Generar el diagrama de flujo (queda un .mmd junto al archivo).
     const comandoDiagrama = commands.registerCommand('forja.diagram', () => {
-        ejecutarOrden('diagram', ['diagram']);
+        ejecutarOrden('diagram', ['diagrama']);
     });
     contexto.subscriptions.push(comandoDiagrama);
 
     // Transpilar a Rust.
     const comandoTranspilar = commands.registerCommand('forja.transpile', () => {
-        ejecutarOrden('transpile', ['transpile']);
+        ejecutarOrden('transpile', ['transpilar']);
     });
     contexto.subscriptions.push(comandoTranspilar);
+
+    // Abrir el tutorial interactivo de la CLI.
+    const comandoTutorial = commands.registerCommand('forja.openTutorial', () => {
+        const terminal = obtenerOCrearTerminal();
+        terminal.sendText(`${comandoForja()} aprender`);
+        terminal.show();
+    });
+    contexto.subscriptions.push(comandoTutorial);
 
     // ── Recarga en caliente y reinicio ──
 
@@ -1101,7 +1111,7 @@ function registrarComandos(contexto: ExtensionContext) {
             const uriDestino = workspace.workspaceFolders?.[0]?.uri;
             if (uriDestino) {
                 const rutaProyecto = path.join(uriDestino.fsPath, nombreCarpeta);
-                obtenerOCrearTerminal().sendText(`forja new "${rutaProyecto}"`);
+                obtenerOCrearTerminal().sendText(`${comandoForja()} nuevo "${rutaProyecto}"`);
                 obtenerOCrearTerminal().show();
             } else {
                 window.showErrorMessage('No hay ninguna carpeta de workspace abierta');
@@ -1112,7 +1122,7 @@ function registrarComandos(contexto: ExtensionContext) {
 
     // Compilar la toolchain local con las características de LSP y DAP.
     const comandoInstalarToolchain = commands.registerCommand('forja.installToolchain', () => {
-        const terminal = window.createTerminal('Forja Toolchain');
+        const terminal = window.createTerminal({ name: 'Forja Toolchain', cwd: rutaRepo() });
         terminal.sendText('cargo build --features lsp,dap');
         terminal.sendText('');
         terminal.sendText('echo "Si necesitas Android NDK, instala Android Studio o configura ANDROID_NDK_HOME"');
@@ -1120,57 +1130,89 @@ function registrarComandos(contexto: ExtensionContext) {
     });
     contexto.subscriptions.push(comandoInstalarToolchain);
 
-    // ── Selectores de VM y plataforma ──
+    // ── Selectores de motor y destino (escriben en forja.yaml) ──
 
-    // Selector rápido del modo de VM por defecto.
     const comandoSeleccionarVM = commands.registerCommand('forja.selectVM', async () => {
-        const opciones: (QuickPickItem & { value: ModoVM })[] = MODOS_VM.map((modo) => ({
-            label: `${ICONOS_VM[modo]} ${ETIQUETAS_VM[modo]}`,
-            description: modo === 'fastvm' ? 'Por defecto, ultra-rápida'
-                : modo === 'vm' ? 'VM original, estable'
-                    : 'Compilación JIT nativa con fallback',
-            value: modo,
+        const opciones: (QuickPickItem & { value: Motor })[] = MOTORES.map((motor) => ({
+            label: `${ICONOS_MOTOR[motor]} ${ETIQUETAS_MOTOR[motor]}`,
+            description: motor === 'rapido' ? 'Intérprete ForjaFast (por defecto)' : 'JIT tiered con fallback a la VM',
+            value: motor,
         }));
 
         const seleccion = await window.showQuickPick(opciones, {
-            placeHolder: 'Seleccionar VM por defecto',
+            placeHolder: 'Motor de ejecución (se escribe en forja.yaml)',
         });
 
         if (seleccion) {
-            modoVMActual = seleccion.value;
-            await workspace.getConfiguration('forja').update('defaultVM', seleccion.value, true);
-            actualizarBarraEstado();
-            canalSalida.appendLine(`VM cambiada a: ${seleccion.value}`);
-
-            window.showInformationMessage(`VM por defecto cambiada a: ${ETIQUETAS_VM[seleccion.value]}`, 'OK');
+            escribirClaveForja('motor', seleccion.value);
+            refrescarConfigForja();
+            canalSalida.appendLine(`forja.yaml: motor → ${seleccion.value}`);
+            window.showInformationMessage(`motor: ${seleccion.value} (forja.yaml)`);
         }
     });
     contexto.subscriptions.push(comandoSeleccionarVM);
 
-    // Selector rápido de la plataforma objetivo.
     const comandoSeleccionarObjetivo = commands.registerCommand('forja.selectTarget', async () => {
-        const opciones: (QuickPickItem & { value: PlataformaObjetivo })[] = PLATAFORMAS.map((objetivo) => ({
-            label: `$(target) ${objetivo}`,
-            description: objetivo === 'native' ? 'Plataforma actual (por defecto)'
-                : objetivo === 'wasm32-unknown-unknown' ? 'WebAssembly'
-                    : objetivo.includes('android') ? 'Android (cross-compile)'
-                        : 'Windows MSVC',
-            value: objetivo,
+        const opciones: (QuickPickItem & { value: Destino })[] = DESTINOS.map((destino) => ({
+            label: `$(target) ${ETIQUETAS_DESTINO[destino]}`,
+            description: destino === 'maquina' ? 'VM / JIT sobre bytecode (por defecto)'
+                : destino === 'ensamblador' ? 'Assembly nativo + gcc'
+                    : 'Ejecutable autónomo / apps GUI',
+            value: destino,
         }));
 
         const seleccion = await window.showQuickPick(opciones, {
-            placeHolder: 'Seleccionar plataforma target',
+            placeHolder: 'Destino de ejecución (se escribe en forja.yaml)',
         });
 
         if (seleccion) {
-            objetivoActual = seleccion.value;
-            await workspace.getConfiguration('forja').update('defaultTarget', seleccion.value, true);
-            actualizarBarraEstado();
-            canalSalida.appendLine(`Target cambiado a: ${seleccion.value}`);
-            window.showInformationMessage(`Target cambiado a: ${seleccion.value}`, 'OK');
+            escribirClaveForja('destino', seleccion.value);
+            refrescarConfigForja();
+            canalSalida.appendLine(`forja.yaml: destino → ${seleccion.value}`);
+            window.showInformationMessage(`destino: ${seleccion.value} (forja.yaml)`);
         }
     });
     contexto.subscriptions.push(comandoSeleccionarObjetivo);
+
+    // Abrir/crear el forja.yaml que gobierna la CLI.
+    const comandoAbrirConfig = commands.registerCommand('forja.openConfig', () => abrirForjaYaml());
+    contexto.subscriptions.push(comandoAbrirConfig);
+
+    // Abrir la biblioteca estándar (si hay checkout del repo).
+    const comandoAbrirStdlib = commands.registerCommand('forja.openStdlib', async () => {
+        const repo = rutaRepo();
+        const rutaStdlib = repo ? path.join(repo, 'stdlib') : '';
+        if (!rutaStdlib || !fs.existsSync(rutaStdlib)) {
+            window.showErrorMessage('No encontré la biblioteca estándar (stdlib/) en el checkout de Forja');
+            return;
+        }
+        await commands.executeCommand('revealFileInOS', Uri.file(rutaStdlib));
+    });
+    contexto.subscriptions.push(comandoAbrirStdlib);
+
+    // Abrir un archivo cualquiera (lo usan otras vistas/extensiones).
+    const comandoAbrirArchivo = commands.registerCommand('forja.openFile', async (ruta?: string) => {
+        if (ruta) {
+            await window.showTextDocument(Uri.file(ruta));
+            return;
+        }
+        const elegido = await window.showOpenDialog({ filters: { Forja: ['fa'] } });
+        if (elegido?.[0]) {
+            await window.showTextDocument(elegido[0]);
+        }
+    });
+    contexto.subscriptions.push(comandoAbrirArchivo);
+
+    // Ir a una línea concreta del editor activo.
+    const comandoIrALinea = commands.registerCommand('forja.revealLine', async (linea?: number) => {
+        const editor = window.activeTextEditor;
+        if (!editor) return;
+        const destino = Math.max(1, Math.min(linea ?? 1, editor.document.lineCount));
+        const posicion = new Range(destino - 1, 0, destino - 1, 0);
+        editor.selection = new Selection(posicion.start, posicion.end);
+        editor.revealRange(posicion, TextEditorRevealType.InCenter);
+    });
+    contexto.subscriptions.push(comandoIrALinea);
 
     // Mostrar el canal de salida.
     const comandoMostrarSalida = commands.registerCommand('forja.showOutput', () => {
@@ -1201,6 +1243,11 @@ function matarProceso(rutaArchivo: string): Promise<void> {
         procesosEnEjecucion.delete(rutaArchivo);
         actualizarBarraEstado();
 
+        if (!proceso.pid) {
+            resolver();
+            return;
+        }
+
         try {
             if (process.platform === 'win32') {
                 // En Windows `taskkill` es más fiable que enviar señales.
@@ -1222,14 +1269,16 @@ function matarProceso(rutaArchivo: string): Promise<void> {
 }
 
 /**
- * Lanza un proceso `forja run` sobre un archivo y lo registra para la recarga.
+ * Lanza `forja ejecutar` sobre un archivo y lo registra para la recarga.
  *
- * Si ya había un proceso para ese archivo lo mata primero. El modo de VM y el
- * modo gráfico se traducen a banderas de línea de órdenes. La salida estándar
- * y la de error se vuelcan al canal de salida de la extensión.
+ * Si ya había un proceso para ese archivo lo mata primero. No se pasan flags:
+ * motor y destino salen de `forja.yaml`, que la CLI lee desde el directorio de
+ * trabajo (la raíz del workspace). La salida estándar y la de error se vuelcan
+ * al canal de salida de la extensión.
  *
  * @param rutaArchivo Ruta absoluta del archivo `.fa` que se quiere ejecutar.
- * @param modo Modo de ejecución: `run` para consola, `gui` para interfaz gráfica.
+ * @param modo Etiqueta del proceso (`run` consola, `gui` interfaz); solo se usa
+ *             para el registro y los mensajes.
  * @returns Nada.
  */
 function iniciarProceso(rutaArchivo: string, modo: 'run' | 'gui') {
@@ -1238,15 +1287,15 @@ function iniciarProceso(rutaArchivo: string, modo: 'run' | 'gui') {
         matarProceso(rutaArchivo);
     }
 
-    const comando = 'forja';
-    const banderaVM = modoVMActual === 'fastvm' ? '--fast' : modoVMActual === 'jit' ? '--jit' : '';
-    const banderaModo = modo === 'gui' ? '--gui' : '';
-    const argumentos = ['run', banderaVM, banderaModo, `"${rutaArchivo}"`].filter(Boolean);
+    // La CLI no usa flags: motor, destino y recarga salen de `forja.yaml`,
+    // que se lee desde el directorio de trabajo (la raíz del workspace).
+    const comando = comandoForja();
+    const argumentos = ['ejecutar', rutaArchivo];
 
     const procesoHijo = spawn(comando, argumentos, {
-        cwd: path.dirname(rutaArchivo),
+        cwd: carpetaRaiz(),
         windowsHide: true,
-        shell: true,
+        shell: false,
         stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -1296,8 +1345,9 @@ function iniciarProceso(rutaArchivo: string, modo: 'run' | 'gui') {
  * Ejecuta una orden de la CLI `forja` sobre el archivo activo.
  *
  * Comprueba que haya un editor activo y que sea un archivo Forja, compone la
- * línea de órdenes con los argumentos de configuración (`forja.buildArgs`) y
- * la envía a la terminal dedicada.
+ * orden con argumentos posicionales (la CLI no usa flags) y la envía a la
+ * terminal dedicada, que corre en la raíz del workspace para que la CLI lea
+ * el `forja.yaml` correcto.
  *
  * @param nombreTarea Identificador interno de la tarea que se ejecuta.
  * @param argumentos Argumentos base de la CLI, sin la ruta del archivo.
@@ -1316,27 +1366,22 @@ function ejecutarOrden(nombreTarea: NombreTarea, argumentos: string[]) {
         return;
     }
 
-    // Composición de la línea de órdenes final.
-    const rutaArchivo = documento.fileName;
-    const argumentosExtra = workspace.getConfiguration('forja').get<string>('buildArgs', '');
-    const todosLosArgumentos = [...argumentos, `"${rutaArchivo}"`, argumentosExtra].filter(a => a).join(' ');
-
-    const comando = `forja ${todosLosArgumentos}`;
+    // La CLI no usa flags: solo el comando, argumentos posicionales y el archivo.
+    const binario = comandoForja();
+    const comando = [binario.includes(' ') ? `"${binario}"` : binario, ...argumentos, `"${documento.fileName}"`].join(' ');
     const terminal = obtenerOCrearTerminal();
 
     // Vaciar la terminal si el usuario lo pidió.
     if (workspace.getConfiguration('forja').get<boolean>('terminal.clearBeforeRun', false)) {
-        terminal.sendText(undefined as any); // `undefined` vacía la terminal.
+        commands.executeCommand('workbench.action.terminal.clear');
     }
 
-    if (workspace.getConfiguration('forja').get<boolean>('terminal.preserveFocus', false)) {
-        terminal.sendText(comando);
-    } else {
-        terminal.sendText(comando);
+    terminal.sendText(comando);
+    if (!workspace.getConfiguration('forja').get<boolean>('terminal.preserveFocus', false)) {
         terminal.show();
     }
 
-    canalSalida.appendLine(`Ejecutando: ${comando}`);
+    canalSalida.appendLine(`Ejecutando (${nombreTarea}): ${comando}`);
 }
 
 /**
@@ -1349,7 +1394,7 @@ function ejecutarOrden(nombreTarea: NombreTarea, argumentos: string[]) {
  */
 function obtenerOCrearTerminal(): Terminal {
     if (terminalForja === undefined) {
-        terminalForja = window.createTerminal(NOMBRE_TERMINAL);
+        terminalForja = window.createTerminal({ name: NOMBRE_TERMINAL, cwd: carpetaRaiz() });
         window.onDidCloseTerminal((terminal) => {
             if (terminal.name === NOMBRE_TERMINAL) {
                 terminalForja = undefined;
@@ -1456,20 +1501,7 @@ class ProveedorConfiguracionDepuracionForja implements DebugConfigurationProvide
  * @returns Ruta absoluta del binario, o `undefined` si no se encontró.
  */
 function buscarBinarioDap(contexto: ExtensionContext): string | undefined {
-    const esWindows = process.platform === 'win32';
-    const nombreEjecutable = `forja-dap${esWindows ? '.exe' : ''}`;
-
-    const rutaDebug = contexto.asAbsolutePath(path.join('..', 'target', 'debug', nombreEjecutable));
-    if (fs.existsSync(rutaDebug)) {
-        return rutaDebug;
-    }
-
-    const rutaRelease = contexto.asAbsolutePath(path.join('..', 'target', 'release', nombreEjecutable));
-    if (fs.existsSync(rutaRelease)) {
-        return rutaRelease;
-    }
-
-    return buscarEnRuta('forja-dap');
+    return buscarBinario('forja-dap');
 }
 
 // ======================================================================
@@ -1480,8 +1512,6 @@ function buscarBinarioDap(contexto: ExtensionContext): string | undefined {
 interface DefinicionTareaForja extends TaskDefinition {
     /** Tarea interna que se ejecutará. */
     task: NombreTarea;
-    /** Argumentos adicionales de la CLI, si los hay. */
-    args?: string;
 }
 
 /**
@@ -1503,14 +1533,14 @@ class ProveedorTareasForja implements TaskProvider {
 
         const rutaArchivo = editores[0].document.fileName;
 
-        // Catálogo de tareas que se publican al usuario.
-        const configuracionesTarea: { nombre: NombreTarea; etiqueta: string; grupo: TaskGroup; argumentos: string }[] = [
-            { nombre: 'run', etiqueta: 'Run (FastVM)', grupo: TaskGroup.Build, argumentos: 'run --fast' },
-            { nombre: 'run-jit', etiqueta: 'Run (JIT)', grupo: TaskGroup.Build, argumentos: 'run --jit' },
-            { nombre: 'test', etiqueta: 'Run tests', grupo: TaskGroup.Test, argumentos: 'test' },
-            { nombre: 'build', etiqueta: 'Build bytecode', grupo: TaskGroup.Build, argumentos: 'build' },
-            { nombre: 'build-asm', etiqueta: 'Build to ASM', grupo: TaskGroup.Build, argumentos: 'build --asm' },
-            { nombre: 'build-wasm', etiqueta: 'Build to WASM', grupo: TaskGroup.Build, argumentos: 'build --target wasm32-unknown-unknown' },
+        // Catálogo de tareas que se publican al usuario (sin flags: CLI posicional).
+        const configuracionesTarea: { nombre: NombreTarea; etiqueta: string; grupo: TaskGroup; argumentos: string[] }[] = [
+            { nombre: 'run', etiqueta: 'Ejecutar', grupo: TaskGroup.Build, argumentos: ['ejecutar'] },
+            { nombre: 'test', etiqueta: 'Tests', grupo: TaskGroup.Test, argumentos: ['test'] },
+            { nombre: 'bench', etiqueta: 'Medir', grupo: TaskGroup.Build, argumentos: ['medir'] },
+            { nombre: 'build', etiqueta: 'Compilar', grupo: TaskGroup.Build, argumentos: ['compilar'] },
+            { nombre: 'build-asm', etiqueta: 'Compilar a ASM', grupo: TaskGroup.Build, argumentos: ['asm'] },
+            { nombre: 'fmt', etiqueta: 'Formatear', grupo: TaskGroup.Build, argumentos: ['formatear'] },
         ];
 
         for (const configuracion of configuracionesTarea) {
@@ -1526,7 +1556,7 @@ class ProveedorTareasForja implements TaskProvider {
                 'forja',
                 new CustomExecution(
                     async (): Promise<Pseudoterminal> => {
-                        return new PseudoterminalForja(`forja ${configuracion.argumentos} "${rutaArchivo}"`);
+                        return new PseudoterminalForja([...configuracion.argumentos, rutaArchivo]);
                     }
                 ),
                 '$(zap)',
@@ -1566,9 +1596,9 @@ class PseudoterminalForja implements Pseudoterminal {
     readonly onDidClose = this.emisorCierre.event;
 
     /**
-     * @param comando Línea de órdenes completa que se ejecutará al abrirse el panel.
+     * @param argumentos Argumentos posicionales de la CLI (sin flags).
      */
-    constructor(private comando: string) { }
+    constructor(private argumentos: string[]) { }
 
     /**
      * Arranca el proceso y conecta su salida al panel.
@@ -1577,21 +1607,21 @@ class PseudoterminalForja implements Pseudoterminal {
      * @returns Nada.
      */
     open(_dimensionesIniciales: any): void {
-        this.emisorEscritura.fire(`Ejecutando: ${this.comando}\r\n\r\n`);
-        const hijo = exec(this.comando, {
-            cwd: workspace.workspaceFolders?.[0]?.uri?.fsPath,
+        this.emisorEscritura.fire(`Ejecutando: ${comandoForja()} ${this.argumentos.join(' ')}\r\n\r\n`);
+        const hijo = spawn(comandoForja(), this.argumentos, {
+            cwd: carpetaRaiz(),
             windowsHide: true,
         });
 
-        hijo.stdout?.on('data', (datos: string) => {
-            this.emisorEscritura.fire(datos);
+        hijo.stdout?.on('data', (datos: Buffer) => {
+            this.emisorEscritura.fire(datos.toString());
         });
 
-        hijo.stderr?.on('data', (datos: string) => {
-            this.emisorEscritura.fire(datos);
+        hijo.stderr?.on('data', (datos: Buffer) => {
+            this.emisorEscritura.fire(datos.toString());
         });
 
-        hijo.on('close', (codigo: number) => {
+        hijo.on('close', (codigo: number | null) => {
             this.emisorEscritura.fire(`\r\nProceso terminado con código: ${codigo}\r\n`);
             this.emisorCierre.fire();
         });
@@ -1638,6 +1668,135 @@ function buscarEnRuta(nombreBinario: string): string | undefined {
         } catch {
             continue;
         }
+    }
+    return undefined;
+}
+
+// ======================================================================
+// Configuración: `forja.yaml` (la CLI no usa flags)
+// ======================================================================
+
+/**
+ * Ejecutable de la CLI. Se puede apuntar a un binario local con
+ * `forja.command` (por ejemplo `target/release/forja`).
+ */
+function comandoForja(): string {
+    return workspace.getConfiguration('forja').get<string>('command', 'forja') || 'forja';
+}
+
+/**
+ * Carpeta donde vive `forja.yaml`: la raíz del workspace o, si no hay
+ * workspace, la carpeta del archivo activo.
+ */
+function carpetaRaiz(): string {
+    if (workspace.workspaceFolders?.[0]) {
+        return workspace.workspaceFolders[0].uri.fsPath;
+    }
+    const editor = window.activeTextEditor;
+    return editor ? path.dirname(editor.document.fileName) : process.cwd();
+}
+
+/** Ruta del `forja.yaml` que lee la CLI al ejecutarse. */
+function rutaForjaYaml(): string {
+    return path.join(carpetaRaiz(), 'forja.yaml');
+}
+
+/**
+ * Lee un escalar de `forja.yaml`. Devuelve `''` si el archivo o la clave no
+ * existen (la CLI completaría con sus defaults).
+ */
+function leerClaveForja(clave: string): string {
+    try {
+        const texto = fs.readFileSync(rutaForjaYaml(), 'utf-8');
+        const coincidencia = texto.match(new RegExp(`^\s*${clave}\s*:\s*(.*)$`, 'm'));
+        if (!coincidencia) return '';
+        return coincidencia[1].replace(/#.*$/, '').trim().replace(/^['"]|['"]$/g, '');
+    } catch {
+        return '';
+    }
+}
+
+/**
+ * Escribe (o agrega) una clave escalar en `forja.yaml`, creando el archivo si
+ * falta. El resto del archivo se conserva tal cual.
+ */
+function escribirClaveForja(clave: string, valor: string) {
+    const ruta = rutaForjaYaml();
+    let texto: string;
+    try {
+        texto = fs.readFileSync(ruta, 'utf-8');
+    } catch {
+        // Un YAML parcial es válido: la CLI completa el resto con sus defaults.
+        texto = '# Configuración de Forja (la CLI completa las claves que falten).\n';
+    }
+    const linea = `${clave}: ${valor}`;
+    const patron = new RegExp(`^\s*${clave}\s*:.*$`, 'm');
+    texto = patron.test(texto)
+        ? texto.replace(patron, linea)
+        : texto + (texto.endsWith('\n') ? '' : '\n') + linea + '\n';
+    fs.writeFileSync(ruta, texto, 'utf-8');
+}
+
+/** Relee `motor` y `destino` de `forja.yaml` y refresca la barra de estado. */
+function refrescarConfigForja() {
+    motorActual = leerClaveForja('motor').toLowerCase() === 'jit' ? 'jit' : 'rapido';
+
+    const destino = leerClaveForja('destino').toLowerCase();
+    destinoActual = destino === 'ensamblador' || destino === 'asm' ? 'ensamblador'
+        : destino === 'nativo' || destino === 'native' || destino === 'gui' ? 'nativo'
+            : 'maquina';
+
+    if (barraEstadoVM && barraEstadoObjetivo) {
+        actualizarBarraEstado();
+    }
+}
+
+/** Abre `forja.yaml` en el editor, creándolo si todavía no existe. */
+async function abrirForjaYaml() {
+    const ruta = rutaForjaYaml();
+    if (!fs.existsSync(ruta)) {
+        escribirClaveForja('motor', 'rapido');
+    }
+    await window.showTextDocument(Uri.file(ruta));
+}
+
+/**
+ * Busca un binario de Forja: ruta configurada, `PATH` y, por último, los
+ * `target/debug|release` del checkout subiendo desde la carpeta de la extensión.
+ */
+function buscarBinario(nombre: string): string | undefined {
+    const configurada = workspace.getConfiguration('forja').get<string>('lsp.path', '');
+    if (nombre === 'forja-lsp' && configurada && fs.existsSync(configurada)) {
+        return configurada;
+    }
+
+    const enRuta = buscarEnRuta(nombre);
+    if (enRuta) return enRuta;
+
+    const nombreEjecutable = process.platform === 'win32' ? `${nombre}.exe` : nombre;
+    let directorio = __dirname;
+    for (let i = 0; i < 6; i++) {
+        for (const perfil of ['debug', 'release']) {
+            const candidato = path.join(directorio, 'target', perfil, nombreEjecutable);
+            if (fs.existsSync(candidato)) return candidato;
+        }
+        const padre = path.dirname(directorio);
+        if (padre === directorio) break;
+        directorio = padre;
+    }
+    return undefined;
+}
+
+/** Raíz del checkout de Forja (donde viven `scripts/` y `stdlib/`), si existe. */
+function rutaRepo(): string | undefined {
+    let directorio = __dirname;
+    for (let i = 0; i < 6; i++) {
+        if (fs.existsSync(path.join(directorio, 'scripts', 'build-android.sh'))) {
+            return directorio;
+        }
+        const padre = path.dirname(directorio);
+        if (padre === directorio) break;
+        directorio = padre;
     }
     return undefined;
 }
