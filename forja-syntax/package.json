@@ -2,7 +2,7 @@
   "name": "forja-syntax",
   "displayName": "Forja (fa)",
   "description": "Soporte completo para el lenguaje Forja — sintaxis, LSP, compilación, debug, toolchain",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "publisher": "forja-lang",
   "license": "MIT",
   "repository": {
@@ -25,17 +25,21 @@
   "activationEvents": [
     "onLanguage:forja",
     "onCommand:forja.run",
-    "onCommand:forja.runFast",
-    "onCommand:forja.runJIT",
-    "onCommand:forja.runAOT",
+    "onCommand:forja.runNative",
+    "onCommand:forja.runRepl",
     "onCommand:forja.runDebug",
-    "onCommand:forja.runGUI",
     "onCommand:forja.build",
     "onCommand:forja.buildASM",
-    "onCommand:forja.buildWASM",
+    "onCommand:forja.buildAndroid",
+    "onCommand:forja.buildAndroid.arm64",
+    "onCommand:forja.buildAndroid.x86_64",
+    "onCommand:forja.buildAndroid.all",
+    "onCommand:forja.checkAndroidNDK",
+    "onCommand:forja.deployAndroid",
     "onCommand:forja.test",
     "onCommand:forja.bench",
     "onCommand:forja.fmt",
+    "onCommand:forja.doc",
     "onCommand:forja.diagram",
     "onCommand:forja.transpile",
     "onCommand:forja.hotReload",
@@ -43,15 +47,18 @@
     "onCommand:forja.newProject",
     "onCommand:forja.selectVM",
     "onCommand:forja.selectTarget",
+    "onCommand:forja.openConfig",
     "onCommand:forja.showOutput",
     "onCommand:forja.installToolchain",
-    "onCommand:forja.toggleHotReload",
+    "onCommand:forja.openTutorial",
     "onCommand:forja.openDiagram",
     "onCommand:forja.toggleSidebar",
+    "onCommand:forja.toggleHotReload",
+    "onCommand:forja.openStdlib",
+    "onCommand:forja.openFile",
+    "onCommand:forja.revealLine",
     "onDebug",
     "onDebugInitialConfigurations",
-    "onCommand:forja.showAST",
-    "onCommand:forja.showBytecode",
     "onView:forja.diagram"
   ],
   "main": "./out/extension.js",
@@ -147,19 +154,14 @@
         "icon": "$(play)"
       },
       {
-        "command": "forja.runFast",
-        "title": "Forja: ejecutar con FastVM",
-        "icon": "$(zap)"
+        "command": "forja.runNative",
+        "title": "Forja: ejecutar en modo nativo/GUI",
+        "icon": "$(window)"
       },
       {
-        "command": "forja.runJIT",
-        "title": "Forja: ejecutar con JIT",
-        "icon": "$(rocket)"
-      },
-      {
-        "command": "forja.runAOT",
-        "title": "Forja: compilar AOT y ejecutar",
-        "icon": "$(tools)"
+        "command": "forja.runRepl",
+        "title": "Forja: abrir consola interactiva (REPL)",
+        "icon": "$(terminal)"
       },
       {
         "command": "forja.runDebug",
@@ -167,18 +169,8 @@
         "icon": "$(bug)"
       },
       {
-        "command": "forja.runGUI",
-        "title": "Forja: ejecutar con interfaz nativa",
-        "icon": "$(window)"
-      },
-      {
-        "command": "forja.runRepl",
-        "title": "Forja: abrir VM interactiva",
-        "icon": "$(terminal)"
-      },
-      {
         "command": "forja.build",
-        "title": "Forja: compilar a Bytecode",
+        "title": "Forja: compilar a ejecutable",
         "icon": "$(gear)"
       },
       {
@@ -192,18 +184,38 @@
         "icon": "$(device-mobile)"
       },
       {
-        "command": "forja.buildWASM",
-        "title": "Forja: compilar a WebAssembly",
-        "icon": "$(globe)"
+        "command": "forja.buildAndroid.arm64",
+        "title": "Forja: compilar para Android ARM64",
+        "icon": "$(device-mobile)"
+      },
+      {
+        "command": "forja.buildAndroid.x86_64",
+        "title": "Forja: compilar para Android x86_64",
+        "icon": "$(device-mobile)"
+      },
+      {
+        "command": "forja.buildAndroid.all",
+        "title": "Forja: compilar para Android (todos los objetivos)",
+        "icon": "$(device-mobile)"
+      },
+      {
+        "command": "forja.checkAndroidNDK",
+        "title": "Forja: verificar NDK Android",
+        "icon": "$(check)"
+      },
+      {
+        "command": "forja.deployAndroid",
+        "title": "Forja: desplegar en dispositivo Android",
+        "icon": "$(plug)"
       },
       {
         "command": "forja.test",
-        "title": "Forja: ejecutar prueba",
+        "title": "Forja: ejecutar pruebas",
         "icon": "$(beaker)"
       },
       {
         "command": "forja.bench",
-        "title": "Forja: evaluar rendimiento",
+        "title": "Forja: medir rendimiento",
         "icon": "$(dashboard)"
       },
       {
@@ -213,7 +225,7 @@
       },
       {
         "command": "forja.doc",
-        "title": "Forja: generar documentacion HTML",
+        "title": "Forja: generar documentación HTML",
         "icon": "$(book)"
       },
       {
@@ -243,13 +255,18 @@
       },
       {
         "command": "forja.selectVM",
-        "title": "Forja: seleccionar maquina virtual por omisión",
-        "icon": "$(vm)"
+        "title": "Forja: seleccionar motor (forja.yaml)",
+        "icon": "$(zap)"
       },
       {
         "command": "forja.selectTarget",
-        "title": "Forja: seleccionar plataforma",
+        "title": "Forja: seleccionar destino (forja.yaml)",
         "icon": "$(target)"
+      },
+      {
+        "command": "forja.openConfig",
+        "title": "Forja: abrir forja.yaml",
+        "icon": "$(gear)"
       },
       {
         "command": "forja.showOutput",
@@ -267,11 +284,6 @@
         "icon": "$(book)"
       },
       {
-        "command": "forja.openWasmPlayground",
-        "title": "Forja: abrir laboratorio WebAssembly",
-        "icon": "$(globe)"
-      },
-      {
         "command": "forja.openDiagram",
         "title": "Forja: abrir visor de diagramas",
         "icon": "$(graph)"
@@ -287,43 +299,8 @@
         "icon": "$(sync-ignored)"
       },
       {
-        "command": "forja.buildAndroid.arm64",
-        "title": "Forja: compilar para Android ARM64",
-        "icon": "$(device-mobile)"
-      },
-      {
-        "command": "forja.buildAndroid.x86_64",
-        "title": "Forja: compilar para Android x86_64",
-        "icon": "$(device-mobile)"
-      },
-      {
-        "command": "forja.buildAndroid.all",
-        "title": "Forja: compilar para Android (todos los objetivos)",
-        "icon": "$(device-mobile)"
-      },
-      {
-        "command": "forja.checkAndroidNDK",
-        "title": "Forja: verificar NDK Android",
-        "icon": "$(check)"
-      },
-      {
-        "command": "forja.deployAndroid",
-        "title": "Forja: desplegar en dispositivo Android",
-        "icon": "$(plug)"
-      },
-      {
-        "command": "forja.showAST",
-        "title": "Forja: mostrar AST",
-        "icon": "$(symbol-struct)"
-      },
-      {
-        "command": "forja.showBytecode",
-        "title": "Forja: mostrar Bytecode generado",
-        "icon": "$(symbol-ruler)"
-      },
-      {
         "command": "forja.openStdlib",
-        "title": "Forja: abrir archivo de la biblioteca",
+        "title": "Forja: abrir biblioteca estándar",
         "icon": "$(library)"
       },
       {
@@ -333,7 +310,7 @@
       },
       {
         "command": "forja.revealLine",
-        "title": "Forja: ir a linea",
+        "title": "Forja: ir a línea",
         "icon": "$(go-to-file)"
       }
     ],
@@ -346,7 +323,7 @@
         },
         {
           "when": "resourceLangId == forja",
-          "command": "forja.runFast",
+          "command": "forja.runNative",
           "group": "navigation@2"
         },
         {
@@ -356,28 +333,23 @@
         },
         {
           "when": "resourceLangId == forja",
-          "command": "forja.runGUI",
+          "command": "forja.hotReload",
           "group": "navigation@4"
         },
         {
           "when": "resourceLangId == forja",
-          "command": "forja.hotReload",
+          "command": "forja.hotRestart",
           "group": "navigation@5"
         },
         {
           "when": "resourceLangId == forja",
-          "command": "forja.hotRestart",
+          "command": "forja.build",
           "group": "navigation@6"
         },
         {
           "when": "resourceLangId == forja",
-          "command": "forja.runAOT",
+          "command": "forja.selectVM",
           "group": "navigation@7"
-        },
-        {
-          "when": "resourceLangId == forja",
-          "command": "forja.build",
-          "group": "navigation@8"
         }
       ],
       "editor/context": [
@@ -388,185 +360,31 @@
         },
         {
           "when": "resourceLangId == forja",
-          "command": "forja.runFast",
+          "command": "forja.runDebug",
           "group": "forja@2"
         },
         {
           "when": "resourceLangId == forja",
-          "command": "forja.runDebug",
+          "command": "forja.fmt",
           "group": "forja@3"
         },
         {
           "when": "resourceLangId == forja",
-          "command": "forja.fmt",
+          "command": "forja.test",
           "group": "forja@4"
         },
         {
           "when": "resourceLangId == forja",
-          "command": "forja.test",
+          "command": "forja.diagram",
           "group": "forja@5"
         },
         {
           "when": "resourceLangId == forja",
-          "command": "forja.diagram",
-          "group": "forja@6"
-        },
-        {
-          "when": "resourceLangId == forja",
           "command": "forja.transpile",
-          "group": "forja@7"
+          "group": "forja@6"
         }
       ],
-      "commandPalette": [
-        {
-          "command": "forja.run",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.runFast",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.runJIT",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.runAOT",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.runDebug",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.runGUI",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.runRepl",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.build",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.buildASM",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.buildAndroid",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.buildWASM",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.test",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.bench",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.fmt",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.doc",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.diagram",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.transpile",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.hotReload",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.hotRestart",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.newProject",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.selectVM",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.selectTarget",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.showOutput",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.installToolchain",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.openTutorial",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.openWasmPlayground",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.openDiagram",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.toggleSidebar",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.toggleHotReload",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.buildAndroid.arm64",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.buildAndroid.x86_64",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.buildAndroid.all",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.checkAndroidNDK",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.deployAndroid",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.showAST",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.showBytecode",
-          "when": "resourceLangId == forja"
-        },
-        {
-          "command": "forja.openStdlib",
-          "when": "resourceLangId == forja"
-        }
-      ]
+      "commandPalette": []
     },
     "keybindings": [
       {
@@ -575,8 +393,8 @@
         "when": "editorLangId == forja"
       },
       {
-        "command": "forja.runFast",
-        "key": "ctrl+alt+f",
+        "command": "forja.runNative",
+        "key": "ctrl+alt+g",
         "when": "editorLangId == forja"
       },
       {
@@ -587,11 +405,6 @@
       {
         "command": "forja.fmt",
         "key": "ctrl+alt+l",
-        "when": "editorLangId == forja"
-      },
-      {
-        "command": "forja.runGUI",
-        "key": "ctrl+alt+g",
         "when": "editorLangId == forja"
       },
       {
@@ -618,77 +431,45 @@
         "command": "forja.openTutorial",
         "key": "ctrl+alt+e",
         "when": "editorLangId == forja"
+      },
+      {
+        "command": "forja.openConfig",
+        "key": "ctrl+alt+c",
+        "when": "editorLangId == forja"
       }
     ],
     "configuration": {
       "title": "Forja",
       "properties": {
-        "forja.diagram.command": {
+        "forja.command": {
           "type": "string",
           "default": "forja",
-          "description": "Comando o ruta absoluta al compilador Forja para generar diagramas."
+          "description": "Comando o ruta absoluta al ejecutable de la CLI Forja."
         },
         "forja.lsp.path": {
           "type": "string",
           "default": "",
-          "description": "Ruta al binario del LSP server forja-lsp. Vacío = auto-detect en PATH"
+          "description": "Ruta al binario del LSP server forja-lsp. Vacío = auto-detect en PATH o target/."
         },
         "forja.lsp.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Habilitar/deshabilitar el servidor LSP"
-        },
-        "forja.defaultVM": {
-          "type": "string",
-          "default": "fastvm",
-          "enum": [
-            "fastvm",
-            "vm",
-            "jit"
-          ],
-          "enumDescriptions": [
-            "ForjaFast (por defecto)",
-            "VM  (estable y probada)",
-            "JIT nativo con fallback a VM"
-          ],
-          "description": "Máquina virtual por defecto para ejecución"
-        },
-        "forja.defaultTarget": {
-          "type": "string",
-          "default": "native",
-          "enum": [
-            "native",
-            "x86_64-pc-windows-msvc",
-            "aarch64-linux-android",
-            "x86_64-linux-android",
-            "wasm32-unknown-unknown"
-          ],
-          "description": "Plataforma objetivo por defecto para compilación"
-        },
-        "forja.buildArgs": {
-          "type": "string",
-          "default": "",
-          "description": "Argumentos extra para el compilador Forja (CLI)"
+          "description": "Habilitar/deshabilitar el servidor LSP."
         },
         "forja.terminal.preserveFocus": {
           "type": "boolean",
           "default": false,
-          "description": "Mantener el foco en el editor al ejecutar comandos"
+          "description": "Mantener el foco en el editor al ejecutar comandos."
         },
         "forja.terminal.clearBeforeRun": {
           "type": "boolean",
           "default": false,
-          "description": "Limpiar la terminal antes de ejecutar"
+          "description": "Limpiar la terminal antes de ejecutar."
         },
         "forja.hotReload.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Habilitar recarga en caliente automático al guardar archivos .fa"
-        },
-        "forja.checkDiagnosticsOnSave": {
-          "type": "boolean",
-          "default": true,
-          "description": "Ejecutar diagnóstico completo al guardar"
+          "description": "Habilitar recarga en caliente automática al guardar archivos .fa."
         }
       }
     },
@@ -701,11 +482,7 @@
         "properties": {
           "task": {
             "type": "string",
-            "description": "La tarea Forja a ejecutar: run, run-fast, run-jit, run-aot, build, test, bench, fmt, doc, diagram, transpile, build-asm, build-wasm, build-android"
-          },
-          "args": {
-            "type": "string",
-            "description": "Argumentos adicionales"
+            "description": "Tarea Forja a ejecutar: run, test, bench, build, build-asm, fmt"
           }
         }
       }
